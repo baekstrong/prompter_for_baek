@@ -95,106 +95,153 @@ test('PWA manifest contains working PNG icons and an installable standalone shel
   }
 });
 
-async function createServiceWorkerHarness({ online = false } = {}) {
+async function createServiceWorkerHarness() {
   const scope = 'https://example.test/prompter/';
   const handlers = new Map();
   const cached = new Map();
-  const state = { openedCaches: [], deletedCaches: [], skipWaitingCalls: 0, claimedClients: 0, networkRequests: [] };
-  const cache = {
-    async addAll(paths) {
-      for (const path of paths) {
-        const url = new URL(path, scope);
-        const localPath = url.pathname.slice(new URL(scope).pathname.length) || 'index.html';
-        const bytes = await readFile(resolve(dist, localPath));
-        cached.set(url.href, new Response(bytes));
-      }
-    },
-    async match(request) {
-      return cached.get(typeof request === 'string' ? request : request.url)?.clone();
-    },
+  const cacheStores = new Map([
+    ['prompter-shell-v1', new Map()],
+    ['prompter-shell-v2', new Map()],
+    ['prompter-shell-v3', cached],
+    ['other-app-shell-v1', new Map()],
+    ['recordings', new Map()],
+  ]);
+  const state = { online: true, networkHTML: null, openedCaches: [], deletedCaches: [], skipWaitingCalls: 0, claimedClients: 0, networkRequests: [] };
+  const key = request => new URL(typeof request === 'string' ? request : request.url, scope).href;
+  const network = async request => {
+    state.networkRequests.push(key(request));
+    if (!state.online) throw new Error('offline');
+    const url = new URL(key(request));
+    const localPath = url.pathname.slice(new URL(scope).pathname.length) || 'index.html';
+    const bytes = localPath === 'index.html' && state.networkHTML !== null
+      ? state.networkHTML
+      : await readFile(resolve(dist, localPath));
+    const extension = localPath.split('.').at(-1);
+    const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', webmanifest: 'application/manifest+json', svg: 'image/svg+xml', png: 'image/png' };
+    const response = new Response(bytes, { headers: { 'content-type': types[extension] ?? 'application/octet-stream' } });
+    Object.defineProperty(response, 'url', { value: url.href });
+    return response;
   };
   runInNewContext(await readFile(resolve(dist, 'sw.js'), 'utf8'), {
     URL,
+    Request,
     Response,
-    fetch: async request => {
-      state.networkRequests.push(request);
-      if (online) return new Response('newer network shell');
-      throw new Error('offline');
-    },
+    Headers,
+    fetch: network,
     caches: {
-      async open(name) { state.openedCaches.push(name); return cache; },
-      async keys() { return ['prompter-shell-v1', 'prompter-shell-v2', 'other-app-shell-v1', 'recordings']; },
-      async delete(name) { state.deletedCaches.push(name); return true; },
+      async open(name) {
+        state.openedCaches.push(name);
+        if (!cacheStores.has(name)) cacheStores.set(name, new Map());
+        const entries = cacheStores.get(name);
+        return {
+          async addAll(paths) {
+            for (const path of paths) entries.set(key(path), await network(path));
+          },
+          async put(request, response) { entries.set(key(request), response.clone()); },
+          async match(request) { return entries.get(key(request))?.clone(); },
+          async delete(request) { return entries.delete(key(request)); },
+        };
+      },
+      async keys() { return [...cacheStores.keys()]; },
+      async delete(name) { state.deletedCaches.push(name); return cacheStores.delete(name); },
     },
     self: {
       registration: { scope },
+      location: new URL('sw.js', scope),
       async skipWaiting() { state.skipWaitingCalls += 1; },
       clients: { async claim() { state.claimedClients += 1; } },
       addEventListener(name, callback) { handlers.set(name, callback); },
     },
   });
   async function dispatch(name, data = {}) {
-    let pending;
-    handlers.get(name)({ ...data, waitUntil(promise) { pending = promise; } });
-    await pending;
+    const pending = [];
+    handlers.get(name)({ ...data, waitUntil(promise) { pending.push(promise); } });
+    await Promise.all(pending);
   }
   async function request(url, mode = 'cors', method = 'GET') {
-    let response;
+    let responsePromise;
+    const pending = [];
+    const request = new Request(url, { method, redirect: mode === 'navigate' ? 'manual' : 'follow' });
+    Object.defineProperty(request, 'mode', { value: mode });
     handlers.get('fetch')({
-      request: { method, url, mode },
-      respondWith(promise) { response = promise; },
+      request,
+      waitUntil(promise) { pending.push(promise); },
+      respondWith(promise) { responsePromise = Promise.resolve(promise); },
     });
+    const response = await responsePromise;
+    await Promise.all(pending);
     return response;
   }
-  return { scope, cached, state, dispatch, request };
+  return { scope, cached, cacheStores, state, dispatch, request };
 }
 
 test('service worker installs its complete shell, serves it offline and ignores recordings', async () => {
   const { scope, cached, state, dispatch, request } = await createServiceWorkerHarness();
   await dispatch('install');
   assert.ok(cached.has(`${scope}index.html`));
-  assert.ok(cached.has(`${scope}app.js?v=2`));
-  assert.ok(cached.has(`${scope}styles.css?v=2`));
-  assert.deepEqual(state.openedCaches, ['prompter-shell-v2']);
-  assert.equal(state.skipWaitingCalls, 0);
+  assert.ok(cached.has(`${scope}app.js?v=3`));
+  assert.ok(cached.has(`${scope}styles.css?v=3`));
+  assert.ok(state.openedCaches.every(name => name === 'prompter-shell-v3'));
+  assert.equal(state.skipWaitingCalls, 1);
+  const installedRequests = state.networkRequests.length;
+  state.online = false;
 
   const navigation = await request(scope, 'navigate');
   assert.equal(navigation.status, 200);
   assert.match(await navigation.text(), /<html/i);
 
   assert.equal((await request(`${scope}core.js`)).status, 200);
-  assert.equal((await request(`${scope}app.js?v=2`)).status, 200);
-  assert.equal((await request(`${scope}styles.css?v=2`)).status, 200);
+  assert.equal((await request(`${scope}app.js?v=3`)).status, 200);
+  assert.equal((await request(`${scope}styles.css?v=3`)).status, 200);
   for (const url of [`${scope}recording.webm`, `${scope}recording.mp4`, 'https://elsewhere.test/video.mp4', `blob:${scope}recording`]) {
     assert.equal(await request(url), undefined, url);
     assert.equal(cached.has(url), false, url);
   }
   assert.equal(await request('https://example.test/another-app/core.js'), undefined);
   assert.equal(await request(`${scope}app.js`, 'cors', 'POST'), undefined);
-  assert.equal(state.networkRequests.length, 0);
+  assert.equal(state.networkRequests.length, installedRequests + 1, 'only navigation tries the network before using the offline shell');
 });
 
-test('service worker keeps installed HTML and assets together until an update is applied', async () => {
-  const { scope, state, dispatch, request } = await createServiceWorkerHarness({ online: true });
+test('service worker refreshes navigation online and retains versioned assets for offline use', async () => {
+  const { scope, state, dispatch, request } = await createServiceWorkerHarness();
   await dispatch('install');
-  assert.match(await (await request(scope, 'navigate')).text(), /<html/i);
+  const installedRequests = state.networkRequests.length;
+  const appHTML = await readFile(resolve(dist, 'index.html'), 'utf8');
+  state.networkHTML = appHTML.replace('</body>', '<p>New network document</p></body>');
+  assert.equal(await (await request(scope, 'navigate')).text(), state.networkHTML);
   assert.match(await (await request(`${scope}core.js`)).text(), /export /);
-  assert.equal(await (await request(`${scope}app.js?v=2`)).text(), await readFile(resolve(dist, 'app.js'), 'utf8'));
-  assert.equal(await (await request(`${scope}styles.css?v=2`)).text(), await readFile(resolve(dist, 'styles.css'), 'utf8'));
-  assert.equal(state.networkRequests.length, 0);
-  assert.equal(state.skipWaitingCalls, 0);
+  assert.equal(await (await request(`${scope}app.js?v=3`)).text(), await readFile(resolve(dist, 'app.js'), 'utf8'));
+  assert.equal(await (await request(`${scope}styles.css?v=3`)).text(), await readFile(resolve(dist, 'styles.css'), 'utf8'));
+  assert.equal(state.networkRequests.length, installedRequests + 1);
+  state.online = false;
+  assert.equal(await (await request(scope, 'navigate')).text(), state.networkHTML);
 });
 
-test('service worker activates an update only on an explicit application request and preserves unrelated caches', async () => {
-  const { state, dispatch } = await createServiceWorkerHarness();
+test('emergency worker activates without app interaction and preserves unrelated caches', async () => {
+  const { state, cacheStores, dispatch } = await createServiceWorkerHarness();
   await dispatch('install');
+  assert.equal(state.skipWaitingCalls, 1);
   for (const data of [undefined, null, {}, 'ACTIVATE_UPDATE', { type: 'CHECK_UPDATE' }]) {
     await dispatch('message', { data });
-    assert.equal(state.skipWaitingCalls, 0);
+    assert.equal(state.skipWaitingCalls, 1);
   }
   await dispatch('message', { data: { type: 'ACTIVATE_UPDATE' } });
+  assert.equal(state.skipWaitingCalls, 2);
+  await dispatch('activate');
+  assert.deepEqual(state.deletedCaches, ['prompter-shell-v1', 'prompter-shell-v2']);
+  assert.ok(cacheStores.has('recordings'));
+  assert.ok(cacheStores.has('other-app-shell-v1'));
+  assert.equal(state.claimedClients, 1);
+});
+
+test('emergency worker activates and removes old caches even when shell installation is offline', async () => {
+  const { state, cacheStores, dispatch } = await createServiceWorkerHarness();
+  state.online = false;
+  await dispatch('install');
   assert.equal(state.skipWaitingCalls, 1);
   await dispatch('activate');
-  assert.deepEqual(state.deletedCaches, ['prompter-shell-v1']);
+  assert.equal(cacheStores.has('prompter-shell-v1'), false);
+  assert.equal(cacheStores.has('prompter-shell-v2'), false);
+  assert.ok(cacheStores.has('recordings'));
   assert.equal(state.claimedClients, 1);
 });

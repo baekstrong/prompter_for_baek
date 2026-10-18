@@ -80,3 +80,14 @@ HOST·PORT 환경변수로 수신 주소를 바꿀 수 있습니다. 아이폰�
 - [Safari 18.4: 녹화 형식·홈 화면 Wake Lock](https://webkit.org/blog/16574/webkit-features-in-safari-18-4/)
 - [MediaStream Recording 표준](https://www.w3.org/TR/mediastream-recording/)
 - [Web Share 표준](https://www.w3.org/TR/web-share/)
+
+## 0.1.2 · 업데이트 후 Safari 접속 오류 복구
+
+0.1.1 서비스 워커가 리다이렉트 이력이 있는 캐시 HTML을 그대로 반환해 Safari에서 `Response served by service worker has redirections`가 발생할 수 있었습니다.
+
+- 실제 앱 문서인지 고유 마커·MIME으로 확인한 뒤 새 Response로 재구성하여 리다이렉트 이력을 제거합니다.
+- 로그인·인증 콜백은 가로채지 않고, 로그인 HTML을 앱 캐시에 보관하지 않습니다. 온라인 화면은 서버 응답을 먼저 사용하고 오프라인일 때 검증된 앱 셸을 사용합니다.
+- 기존 오류 화면에서도 복구 worker가 활성화되도록 앱 셸 저장 실패와 worker 설치를 분리했습니다. 열린 촬영 페이지를 강제 재시작하지 않습니다.
+- 대본의 localStorage와 촬영 영상의 IndexedDB는 삭제하지 않습니다. 기존 앱 아이콘 삭제·재설치·웹사이트 데이터 초기화를 복구 방법으로 사용하지 않습니다.
+- 복구 후 화면 아래 버전은 **0.1.2**입니다. 기존 홈 화면 아이콘을 인터넷에 연결된 상태에서 열고 업데이트 점검 시간을 준 뒤, 앱 전환기에서 닫고 같은 아이콘으로 다시 실행합니다. iOS에서 적용되는 정확한 시점은 실기기 확인이 필요합니다.
+- 리다이렉트·로그인 오염·구버전 캐시·오프라인 복구를 포함한 테스트44개를 통과했습니다. 실제 iPhone 설치본 복구 확인은 별도입니다.
