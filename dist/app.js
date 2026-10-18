@@ -6,11 +6,12 @@ const $ = id => document.getElementById(id);
 const scriptInput = $('script-input'), promptScroll = $('prompt-scroll'), promptText = $('prompt-text');
 const engine = new CameraEngine({ videoElement: $('camera-preview') });
 const STORAGE_KEY = 'prompter.workspace.v1';
-let settings = normalizeSettings(), script = DEFAULT_SCRIPT, playing = false, frame = 0, lastFrame = 0;
+let settings = normalizeSettings(), script = DEFAULT_SCRIPT, playing = false, frame = 0, lastFrame = 0, scrollPosition = 0;
 let saveTimer, toastTimer, wakeLock = null, wakePending = false, countdownToken = 0, starting = false, cancelling = false;
 let recordStart = 0, recordTimer, recordings = [], playbackURL = null, playbackFile = null, playbackToken = 0;
 let editorReturnFocus = null, interruptedMessage = '', lastStorageCheck = 0;
 const volatileTakes = new Map();
+let serviceWorkerRegistration = null, applyingUpdate = false;
 
 function toast(message, duration = 5500) {
   const dialog = [...document.querySelectorAll('dialog[open]')].at(-1);
@@ -97,9 +98,12 @@ function tick(now) {
   if (!playing) return;
   if (!lastFrame) lastFrame = now;
   const max = promptScroll.scrollHeight - promptScroll.clientHeight;
-  promptScroll.scrollTop = nextScroll(promptScroll.scrollTop, now - lastFrame, settings.speed, max);
+  // WebKit exposes integer scrollTop offsets. Keep fractional movement here so
+  // a frame smaller than 1px is retained for the next frame (including 120Hz).
+  scrollPosition = nextScroll(scrollPosition, now - lastFrame, settings.speed, max);
+  promptScroll.scrollTop = scrollPosition;
   lastFrame = now; updateProgress();
-  if (promptScroll.scrollTop >= max - 1) { setPlaying(false); return; }
+  if (scrollPosition >= max) { setPlaying(false); return; }
   frame = requestAnimationFrame(tick);
 }
 function setPlaying(value) {
@@ -107,6 +111,7 @@ function setPlaying(value) {
   playing = value; cancelAnimationFrame(frame); lastFrame = 0;
   if (playing) {
     if (promptScroll.scrollTop >= promptScroll.scrollHeight - promptScroll.clientHeight - 1) promptScroll.scrollTop = 0;
+    scrollPosition = promptScroll.scrollTop;
     frame = requestAnimationFrame(tick);
   }
   $('play-button').setAttribute('aria-pressed', String(playing));
@@ -116,7 +121,7 @@ function setPlaying(value) {
   syncWakeLock();
 }
 $('play-button').addEventListener('click', () => setPlaying(!playing));
-$('rewind-button').addEventListener('click', () => { promptScroll.scrollTop = 0; updateProgress(); });
+$('rewind-button').addEventListener('click', () => { scrollPosition = 0; promptScroll.scrollTop = 0; updateProgress(); });
 promptScroll.addEventListener('scroll', updateProgress, { passive: true });
 promptScroll.addEventListener('pointerdown', () => setPlaying(false));
 promptScroll.addEventListener('wheel', () => setPlaying(false), { passive: true });
@@ -175,7 +180,7 @@ function updateCameraUI() {
   $('camera-gate').hidden = ['ready', 'recording', 'stopping'].includes(state) || playing;
   $('flip-button').disabled = state !== 'ready' || starting;
   $('camera-off-button').disabled = state !== 'ready' || starting;
-  $('record-button').disabled = state === 'stopping' || cancelling;
+  $('record-button').disabled = state === 'stopping' || cancelling || applyingUpdate;
   $('record-button').classList.toggle('is-recording', recording);
   $('record-label').textContent = cancelling ? '준비 취소 중…' : starting ? '준비 취소' : recording ? '녹화 종료' : state === 'stopping' ? '영상 보관 중' : '녹화 시작';
   $('recording-badge').hidden = !recording;
@@ -217,6 +222,7 @@ function cancelCountdown() {
   $('countdown').hidden = true; updateCameraUI();
 }
 async function startRecording() {
+  if (applyingUpdate) return;
   starting = true; const token = ++countdownToken; updateCameraUI();
   try {
     if (engine.state !== 'ready') await engine.open();
@@ -349,8 +355,56 @@ window.addEventListener('beforeunload', e => {
 });
 window.addEventListener('resize', () => { renderSettings(); updateProgress(); });
 
+function announceUpdate(registration) {
+  if (!registration.waiting) return;
+  $('update-banner').hidden = false;
+  $('update-status').textContent = '새 버전을 적용할 수 있어요.';
+}
+function observeInstallation(registration) {
+  const worker = registration.installing;
+  if (!worker) return;
+  worker.addEventListener('statechange', () => {
+    if (worker.state === 'installed') announceUpdate(registration);
+  });
+}
+$('check-update-button').addEventListener('click', async () => {
+  if (!serviceWorkerRegistration) { toast('인터넷 연결을 확인한 뒤 앱을 다시 열어 주세요.'); return; }
+  $('check-update-button').disabled = true;
+  $('update-status').textContent = '업데이트 확인 중…';
+  try {
+    await serviceWorkerRegistration.update();
+    if (serviceWorkerRegistration.waiting) announceUpdate(serviceWorkerRegistration);
+    else $('update-status').textContent = serviceWorkerRegistration.installing ? '새 버전 준비 중…' : '최신 버전입니다.';
+  } catch { $('update-status').textContent = '확인하지 못했어요. 인터넷 연결을 확인해 주세요.'; }
+  finally { $('check-update-button').disabled = false; }
+});
+$('apply-update-button').addEventListener('click', () => {
+  if (playing || starting || ['opening', 'recording', 'stopping'].includes(engine.state)) {
+    toast('대본 재생과 녹화를 마친 뒤 업데이트를 적용해 주세요.'); return;
+  }
+  if (volatileTakes.size) { toast('임시 보관 중인 영상을 파일로 저장하고 보관함에서 정리한 뒤 업데이트해 주세요.', 8000); return; }
+  if (!serviceWorkerRegistration?.waiting) { toast('업데이트 확인을 누른 뒤 다시 시도해 주세요.'); return; }
+  saveWorkspace(); applyingUpdate = true;
+  $('play-button').disabled = true; $('apply-update-button').disabled = true;
+  $('apply-update-button').textContent = '적용 중…'; updateCameraUI();
+  serviceWorkerRegistration.waiting.postMessage({ type: 'ACTIVATE_UPDATE' });
+  setTimeout(() => {
+    if (!applyingUpdate) return;
+    applyingUpdate = false; $('play-button').disabled = false; $('apply-update-button').disabled = false;
+    $('apply-update-button').textContent = '업데이트 적용'; updateCameraUI();
+    toast('업데이트가 늦어지고 있어요. 촬영을 마친 뒤 앱을 완전히 닫고 다시 열어 주세요.', 8000);
+  }, 15000);
+});
 if ('serviceWorker' in navigator && window.isSecureContext) {
-  navigator.serviceWorker.register('./sw.js').then(async () => {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // Never restart an active take merely because another tab installed a release.
+    if (applyingUpdate) { saveWorkspace(); window.location.reload(); }
+  });
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(async registration => {
+    serviceWorkerRegistration = registration;
+    announceUpdate(registration); observeInstallation(registration);
+    registration.addEventListener('updatefound', () => observeInstallation(registration));
+    registration.update().catch(() => {});
     await navigator.serviceWorker.ready;
     $('offline-status').textContent = '오프라인 사용 준비 완료. 이 기기에서 인터넷 없이 대본과 촬영 기능을 사용할 수 있어요.';
   }).catch(() => { $('offline-status').textContent = '오프라인 준비를 완료하지 못했어요. 인터넷에 연결한 상태에서 사용해 주세요.'; });

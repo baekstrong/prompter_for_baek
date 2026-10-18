@@ -8,6 +8,41 @@
   --border:#292e35;
   color-scheme:dark
 }
+.update-banner {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  padding:12px 16px;
+  background:#263223;
+  color:#d2f298;
+  font-size:12px;
+}
+.update-banner .quiet-button {
+  color:#d2f298;
+  border-color:#71855d;
+}
+.app-version {
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:12px;
+  color:#8e959f;
+  font-size:10px;
+  padding:6px 14px max(14px,env(safe-area-inset-bottom));
+}
+.app-version button {
+  border:0;
+  border-bottom:1px solid #566249;
+  padding:4px 0;
+  background:transparent;
+  color:#c6d7af;
+  font-size:10px;
+}
+.focus-mode .app-version {
+  display:none;
+}
 * {
   box-sizing:border-box
 }

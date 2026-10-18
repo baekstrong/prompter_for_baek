@@ -1,10 +1,12 @@
-// Change this name when publishing a new application shell.
-const CACHE_NAME = 'prompter-shell-v1';
+// Bump this version whenever publishing a new application shell.
+const APP_VERSION = '2';
+const CACHE_PREFIX = 'prompter-shell-';
+const CACHE_NAME = `${CACHE_PREFIX}v${APP_VERSION}`;
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
+  './styles.css?v=2',
+  './app.js?v=2',
   './core.js',
   './camera.js',
   './recording-store.js',
@@ -23,10 +25,15 @@ self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)));
 });
 
+self.addEventListener('message', event => {
+  // The app sends this only after the user applies an update while it is idle.
+  if (event.data?.type === 'ACTIVATE_UPDATE') event.waitUntil(self.skipWaiting());
+});
+
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const cacheNames = await caches.keys();
-    await Promise.all(cacheNames.filter(name => name.startsWith('prompter-shell-') && name !== CACHE_NAME).map(name => caches.delete(name)));
+    await Promise.all(cacheNames.filter(name => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME).map(name => caches.delete(name)));
     await self.clients.claim();
   })());
 });
@@ -40,12 +47,9 @@ self.addEventListener('fetch', event => {
 
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
-      try {
-        return await fetch(request);
-      } catch {
-        const cache = await caches.open(CACHE_NAME);
-        return (await cache.match(new URL('./index.html', scope).href)) ?? Response.error();
-      }
+      // Keep HTML and JS on the same installed version until the update is applied.
+      const cache = await caches.open(CACHE_NAME);
+      return (await cache.match(new URL('./index.html', scope).href)) ?? fetch(request);
     })());
     return;
   }

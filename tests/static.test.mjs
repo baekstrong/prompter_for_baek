@@ -95,10 +95,11 @@ test('PWA manifest contains working PNG icons and an installable standalone shel
   }
 });
 
-test('service worker installs its complete shell, serves it offline and ignores recordings', async () => {
+async function createServiceWorkerHarness({ online = false } = {}) {
   const scope = 'https://example.test/prompter/';
   const handlers = new Map();
   const cached = new Map();
+  const state = { openedCaches: [], deletedCaches: [], skipWaitingCalls: 0, claimedClients: 0, networkRequests: [] };
   const cache = {
     async addAll(paths) {
       for (const path of paths) {
@@ -112,44 +113,88 @@ test('service worker installs its complete shell, serves it offline and ignores 
       return cached.get(typeof request === 'string' ? request : request.url)?.clone();
     },
   };
-  let forcedUpdate = false;
   runInNewContext(await readFile(resolve(dist, 'sw.js'), 'utf8'), {
     URL,
     Response,
-    fetch: async () => { throw new Error('offline'); },
-    caches: { open: async () => cache },
+    fetch: async request => {
+      state.networkRequests.push(request);
+      if (online) return new Response('newer network shell');
+      throw new Error('offline');
+    },
+    caches: {
+      async open(name) { state.openedCaches.push(name); return cache; },
+      async keys() { return ['prompter-shell-v1', 'prompter-shell-v2', 'other-app-shell-v1', 'recordings']; },
+      async delete(name) { state.deletedCaches.push(name); return true; },
+    },
     self: {
       registration: { scope },
-      skipWaiting() { forcedUpdate = true; },
+      async skipWaiting() { state.skipWaitingCalls += 1; },
+      clients: { async claim() { state.claimedClients += 1; } },
       addEventListener(name, callback) { handlers.set(name, callback); },
     },
   });
-  let installation;
-  handlers.get('install')({ waitUntil(promise) { installation = promise; } });
-  await installation;
-  assert.ok(cached.has(`${scope}index.html`));
-  assert.equal(forcedUpdate, false);
-
-  let navigation;
-  handlers.get('fetch')({
-    request: { method: 'GET', url: scope, mode: 'navigate' },
-    respondWith(promise) { navigation = promise; },
-  });
-  assert.equal((await navigation).status, 200);
-  assert.match(await (await navigation).text(), /<html/i);
-
-  let shellAsset;
-  handlers.get('fetch')({
-    request: { method: 'GET', url: `${scope}core.js`, mode: 'cors' },
-    respondWith(promise) { shellAsset = promise; },
-  });
-  assert.equal((await shellAsset).status, 200);
-  for (const url of [`${scope}recording.webm`, 'https://elsewhere.test/video.mp4', `blob:${scope}recording`]) {
-    let intercepted = false;
-    handlers.get('fetch')({
-      request: { method: 'GET', url, mode: 'cors' },
-      respondWith() { intercepted = true; },
-    });
-    assert.equal(intercepted, false, url);
+  async function dispatch(name, data = {}) {
+    let pending;
+    handlers.get(name)({ ...data, waitUntil(promise) { pending = promise; } });
+    await pending;
   }
+  async function request(url, mode = 'cors', method = 'GET') {
+    let response;
+    handlers.get('fetch')({
+      request: { method, url, mode },
+      respondWith(promise) { response = promise; },
+    });
+    return response;
+  }
+  return { scope, cached, state, dispatch, request };
+}
+
+test('service worker installs its complete shell, serves it offline and ignores recordings', async () => {
+  const { scope, cached, state, dispatch, request } = await createServiceWorkerHarness();
+  await dispatch('install');
+  assert.ok(cached.has(`${scope}index.html`));
+  assert.ok(cached.has(`${scope}app.js?v=2`));
+  assert.ok(cached.has(`${scope}styles.css?v=2`));
+  assert.deepEqual(state.openedCaches, ['prompter-shell-v2']);
+  assert.equal(state.skipWaitingCalls, 0);
+
+  const navigation = await request(scope, 'navigate');
+  assert.equal(navigation.status, 200);
+  assert.match(await navigation.text(), /<html/i);
+
+  assert.equal((await request(`${scope}core.js`)).status, 200);
+  assert.equal((await request(`${scope}app.js?v=2`)).status, 200);
+  assert.equal((await request(`${scope}styles.css?v=2`)).status, 200);
+  for (const url of [`${scope}recording.webm`, `${scope}recording.mp4`, 'https://elsewhere.test/video.mp4', `blob:${scope}recording`]) {
+    assert.equal(await request(url), undefined, url);
+    assert.equal(cached.has(url), false, url);
+  }
+  assert.equal(await request('https://example.test/another-app/core.js'), undefined);
+  assert.equal(await request(`${scope}app.js`, 'cors', 'POST'), undefined);
+  assert.equal(state.networkRequests.length, 0);
+});
+
+test('service worker keeps installed HTML and assets together until an update is applied', async () => {
+  const { scope, state, dispatch, request } = await createServiceWorkerHarness({ online: true });
+  await dispatch('install');
+  assert.match(await (await request(scope, 'navigate')).text(), /<html/i);
+  assert.match(await (await request(`${scope}core.js`)).text(), /export /);
+  assert.equal(await (await request(`${scope}app.js?v=2`)).text(), await readFile(resolve(dist, 'app.js'), 'utf8'));
+  assert.equal(await (await request(`${scope}styles.css?v=2`)).text(), await readFile(resolve(dist, 'styles.css'), 'utf8'));
+  assert.equal(state.networkRequests.length, 0);
+  assert.equal(state.skipWaitingCalls, 0);
+});
+
+test('service worker activates an update only on an explicit application request and preserves unrelated caches', async () => {
+  const { state, dispatch } = await createServiceWorkerHarness();
+  await dispatch('install');
+  for (const data of [undefined, null, {}, 'ACTIVATE_UPDATE', { type: 'CHECK_UPDATE' }]) {
+    await dispatch('message', { data });
+    assert.equal(state.skipWaitingCalls, 0);
+  }
+  await dispatch('message', { data: { type: 'ACTIVATE_UPDATE' } });
+  assert.equal(state.skipWaitingCalls, 1);
+  await dispatch('activate');
+  assert.deepEqual(state.deletedCaches, ['prompter-shell-v1']);
+  assert.equal(state.claimedClients, 1);
 });
