@@ -2,3 +2,8 @@
 .env
 .env.*
 !.env.example
+node_modules/
+.artifacts/
+.sites-runtime/
+.sites-checkout/
+*.tar.gz

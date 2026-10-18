@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101318">
+  <meta name="description" content="대본을 읽고, 나답게 촬영하세요. 대본과 영상을 기기 안에 보관하는 촬영 프롬프터.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>프롬프터 · 내 속도로, 자연스럽게</title>
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icons/icon-180.png">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-script" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="m8 5 1.5-2h5L16 5h3a2 2 0 0 1 2 2v12H3V7a2 2 0 0 1 2-2z"/><circle cx="12" cy="12" r="4"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M8 5v14m12-1L9 12l11-6z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-library" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="14" rx="3"/><path d="M7 3h10M9 11l6 3-6 3z"/></symbol>
+    <symbol id="i-flip" viewBox="0 0 24 24"><path d="M20 8a8 8 0 0 0-14-2L3 9m0-5v5h5m-4 7a8 8 0 0 0 14 2l3-3m0 5v-5h-5"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9m-5-7a8 8 0 1 0 10 0"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3m-4 4 4-4 4 4M7 10H4v11h16V10h-3"/></symbol>
+  </defs></svg>
+  <header class="app-header">
+    <a href="./" class="brand" aria-label="프롬프터 홈"><span class="brand-mark"><svg><use href="#i-script"/></svg></span><span>프롬프터<small>내 속도로, 자연스럽게</small></span></a>
+    <div class="header-actions"><span class="local-badge"><span></span>기기 안에만 저장</span><button id="help-button" class="icon-button" aria-label="사용 안내">?</button></div>
+  </header>
+  <main>
+    <div class="workspace-heading"><div><span class="eyebrow">MY LITTLE STUDIO</span><h1>오늘도, 나답게 이야기하세요.</h1></div><button id="library-button" class="quiet-button"><svg><use href="#i-library"/></svg>촬영 보관함 <span id="take-count">0</span></button></div>
+    <div class="workspace">
+      <aside id="editor-panel" class="editor-panel" aria-label="대본 편집">
+        <div class="panel-heading"><h2><svg><use href="#i-script"/></svg>내 대본</h2><button id="editor-close" class="icon-button mobile-only" aria-label="대본 편집 닫기"><svg><use href="#i-close"/></svg></button><span class="desktop-only" id="save-status">기기에 저장됨</span></div>
+        <label class="sr-only" for="script-input">촬영할 대본</label><textarea id="script-input" spellcheck="false" placeholder="오늘의 이야기를 여기에 붙여 넣어 주세요."></textarea>
+        <div class="editor-meta"><span id="character-count">0자</span><span>줄바꿈 그대로</span></div>
+        <div class="editor-actions"><label class="quiet-button file-button" tabindex="0">TXT 불러오기<input id="file-input" type="file" accept=".txt,text/plain" hidden></label><button id="sample-button" class="quiet-button">예시 대본</button></div>
+        <div class="editor-tip"><span class="tip-mark">↗</span><p>시선은 렌즈 가까이.<br><span>대본 위 손잡이를 끌어 읽기 편한 곳에 놓으세요.</span></p></div>
+      </aside>
+      <section class="studio" aria-label="프롬프터 촬영">
+        <div class="studio-top"><div class="studio-state"><span id="state-dot" class="state-dot"></span><span id="camera-status">촬영 준비</span></div><div class="studio-tools"><button id="camera-off-button" class="icon-button" aria-label="카메라 끄기" title="카메라 끄기" disabled><svg><use href="#i-power"/></svg></button><button id="flip-button" class="icon-button" aria-label="전면·후면 카메라 전환" title="카메라 전환" disabled><svg><use href="#i-flip"/></svg></button><button id="focus-button" class="icon-button" aria-label="촬영 화면 크게 보기" aria-pressed="false"><svg><use href="#i-expand"/></svg></button></div></div>
+        <div id="camera-stage" class="camera-stage">
+          <video id="camera-preview" autoplay muted playsinline aria-label="카메라 미리보기"></video>
+          <div id="camera-gate" class="camera-gate"><span class="camera-illustration"><svg><use href="#i-camera"/></svg></span><h2>이제, 당신의 차례.</h2><p>대본을 준비하고 카메라를 켜 주세요.<br>영상에는 대본이 담기지 않아요.</p><button id="open-camera" class="primary-button"><svg><use href="#i-camera"/></svg>카메라 켜기</button><span class="gate-note">카메라와 마이크 접근이 필요해요</span></div>
+          <div class="frame-corner tl"></div><div class="frame-corner tr"></div><div class="frame-corner bl"></div><div class="frame-corner br"></div>
+          <div id="prompt-box" class="prompt-box" aria-label="대본 프롬프터"><button id="drag-handle" class="drag-handle" aria-label="대본 위치 이동. 방향키로도 이동할 수 있습니다."><span>⠿</span><span>대본 위치 이동</span></button><div id="prompt-scroll" class="prompt-scroll" tabindex="0" aria-label="읽을 대본"><div id="prompt-text" class="prompt-text"></div><div class="prompt-end" aria-hidden="true">이야기의 끝.</div></div></div>
+          <div id="countdown" class="countdown" hidden aria-live="assertive"></div>
+          <div id="recording-badge" class="recording-badge" hidden><span></span>REC <span id="recording-time">00:00</span></div>
+          <span id="frame-hint" class="frame-hint">미리보기 좌우 반전 · 원본으로 녹화</span>
+        </div>
+        <div class="studio-bottom"><div class="prompt-controls"><button id="rewind-button" class="icon-button" aria-label="대본 처음으로"><svg><use href="#i-back"/></svg></button><button id="play-button" class="reading-button" aria-pressed="false"><svg><use href="#i-play"/></svg><span>읽기 연습</span></button><span id="read-progress" class="read-progress">0%</span></div><button id="record-button" class="record-button"><span class="record-shape"></span><span id="record-label">녹화 시작</span></button><button id="settings-button" class="icon-button" aria-label="대본 및 촬영 설정"><svg><use href="#i-settings"/></svg></button></div>
+        <div class="timeline"><div id="timeline-fill"></div></div>
+      </section>
+    </div>
+    <footer class="workspace-footer"><span id="storage-status">영상은 이 기기에 보관됩니다.</span><span id="wake-status">촬영 전 화면 방향을 맞춰 주세요.</span><button id="mobile-editor-button" class="quiet-button mobile-only"><svg><use href="#i-script"/></svg>대본 수정</button></footer>
+  </main>
+  <dialog id="settings-dialog" class="sheet"><div class="dialog-heading"><div><span class="eyebrow">MAKE IT YOURS</span><h2>나에게 맞는 촬영</h2></div><button class="icon-button" data-close aria-label="설정 닫기"><svg><use href="#i-close"/></svg></button></div><div class="settings-body">
+    <label class="slider-label" for="font-size">글자 크기 <output id="font-value"></output></label><input id="font-size" type="range" min="22" max="64" step="1">
+    <label class="slider-label" for="scroll-speed">스크롤 속도 <output id="speed-value"></output></label><input id="scroll-speed" type="range" min="8" max="100" step="1"><div class="range-caption"><span>천천히</span><span>빠르게</span></div>
+    <label class="slider-label" for="prompt-width">대본 폭 <output id="width-value"></output></label><input id="prompt-width" type="range" min="45" max="100" step="1">
+    <label class="slider-label" for="prompt-opacity">대본 배경 <output id="opacity-value"></output></label><input id="prompt-opacity" type="range" min="0" max="85" step="1">
+    <div class="setting-row"><span>대본 위치</span><div class="segmented"><button id="position-top">위쪽</button><button id="position-middle">가운데</button></div></div>
+    <div class="setting-row"><label for="countdown-select">시작 카운트다운</label><select id="countdown-select"><option value="0">바로 시작</option><option value="3">3초</option><option value="5">5초</option></select></div>
+    <div class="setting-row"><label for="mirror-input">미리보기 좌우 반전</label><input id="mirror-input" type="checkbox" role="switch"></div>
+    <p class="settings-note" id="quality-status">카메라를 켜면 실제 촬영 화질이 표시됩니다.</p><p class="settings-note">30분 촬영 시 약 1GB의 여유 공간을 권장합니다. 실제 용량은 기기와 화질에 따라 달라집니다. 긴 촬영 전 짧게 녹화하고 소리와 저장을 확인해 주세요.</p>
+  </div></dialog>
+  <dialog id="library-dialog" class="sheet library-sheet"><div class="dialog-heading"><div><span class="eyebrow">YOUR TAKES</span><h2>촬영 보관함</h2></div><button class="icon-button" data-close aria-label="보관함 닫기"><svg><use href="#i-close"/></svg></button></div><p class="dialog-description">이 브라우저에 보관된 영상입니다. 필요한 영상은 공유하거나 파일로 저장해 주세요.</p><div id="takes-list" class="takes-list"></div></dialog>
+  <dialog id="playback-dialog" class="sheet playback-sheet"><div class="dialog-heading"><h2 id="playback-title">촬영한 영상</h2><button class="icon-button" data-close aria-label="영상 닫기"><svg><use href="#i-close"/></svg></button></div><video id="playback-video" controls playsinline preload="metadata"></video><p id="playback-meta" class="dialog-description"></p><div class="playback-actions"><button id="share-button" class="primary-button" disabled><svg><use href="#i-share"/></svg>공유 / 사진에 저장</button><a id="download-link" class="quiet-button" download><svg><use href="#i-download"/></svg>파일로 저장</a></div><p id="share-hint" class="settings-note">공유 화면에서 ‘비디오 저장’을 선택할 수 있습니다. 메뉴는 기기와 파일 형식에 따라 달라집니다.</p></dialog>
+  <dialog id="help-dialog" class="sheet"><div class="dialog-heading"><div><span class="eyebrow">A LITTLE HELP</span><h2>자연스럽게 읽는 방법</h2></div><button class="icon-button" data-close aria-label="안내 닫기"><svg><use href="#i-close"/></svg></button></div><ol class="help-steps"><li><strong>대본을 준비하세요.</strong><p>직접 쓰거나 TXT 파일을 불러오세요. 대본은 이 브라우저에 자동 저장됩니다.</p></li><li><strong>시선과 속도를 맞추세요.</strong><p>대본 손잡이를 렌즈 가까이 옮기고 읽기 연습을 해 보세요. 설정에서 글자 크기와 속도를 바꿀 수 있어요.</p></li><li><strong>이제 녹화하세요.</strong><p>녹화 중에도 대본만 잠시 멈추거나 처음으로 돌릴 수 있어요. 촬영을 마치면 공유 또는 파일로 저장하세요.</p></li></ol><div class="help-note"><strong>아이폰에서 편하게</strong><p>Safari로 열고 공유 → ‘홈 화면에 추가’를 선택하세요. 홈 화면에서도 바로 실행할 수 있어요.</p><p>촬영 중 다른 앱으로 전환하거나 화면을 잠그면 녹화를 종료합니다. 촬영 방향을 유지하고 긴 촬영 전 저장 공간을 확인해 주세요. 브라우저 데이터 삭제 시 보관함도 삭제됩니다.</p><p id="offline-status">처음 한 번은 인터넷 연결이 필요합니다.</p></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <noscript>프롬프터를 사용하려면 JavaScript를 켜 주세요.</noscript>
+</body>
+</html>
