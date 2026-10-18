@@ -9,7 +9,7 @@ export const DEFAULT_SCRIPT = `카메라를 바라보며,
 글자 크기와 속도를 맞춰 보세요.
 준비가 되면, 녹화 버튼을 눌러 주세요.`;
 
-export const DEFAULT_SETTINGS = Object.freeze({ fontSize: 34, speed: 32, width: 82, opacity: 35, x: 50, y: 16, countdown: 3, mirror: true });
+export const DEFAULT_SETTINGS = Object.freeze({ fontSize: 34, speed: 32, width: 82, opacity: 35, x: 50, y: 16, countdown: 3, mirror: true, grid: true });
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 export function normalizeSettings(input = {}) {
   const number = (key, min, max) => clamp(Number.isFinite(Number(input[key])) ? Number(input[key]) : DEFAULT_SETTINGS[key], min, max);
@@ -17,7 +17,8 @@ export function normalizeSettings(input = {}) {
   return { fontSize: number('fontSize', 22, 64), speed: number('speed', 8, 100), width,
     opacity: number('opacity', 0, 85), x: clamp(number('x', 0, 100), width / 2, 100 - width / 2),
     y: number('y', 4, 62), countdown: [0, 3, 5].includes(Number(input.countdown)) ? Number(input.countdown) : 3,
-    mirror: typeof input.mirror === 'boolean' ? input.mirror : true };
+    mirror: typeof input.mirror === 'boolean' ? input.mirror : true,
+    grid: typeof input.grid === 'boolean' ? input.grid : true };
 }
 export function formatTime(milliseconds = 0) {
   const seconds = Math.max(0, Math.floor(milliseconds / 1000));

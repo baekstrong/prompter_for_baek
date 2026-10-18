@@ -1,6 +1,6 @@
 import { CameraEngine } from './camera.js';
 import { listRecordings, getRecording, deleteRecording } from './recording-store.js';
-import { DEFAULT_SCRIPT, normalizeSettings, clamp, formatTime, formatBytes, recordingName, nextScroll } from './core.js';
+import { DEFAULT_SCRIPT, normalizeSettings, clamp, formatTime, formatBytes, recordingName, nextScroll } from './core.js?v=4';
 
 const $ = id => document.getElementById(id);
 const scriptInput = $('script-input'), promptScroll = $('prompt-scroll'), promptText = $('prompt-text');
@@ -48,6 +48,15 @@ function renderScript() {
   $('character-count').textContent = `${scriptInput.value.length.toLocaleString('ko-KR')}자`;
   updateProgress();
 }
+function updateGrid() {
+  const video = $('camera-preview'), stage = $('camera-stage'), grid = $('camera-grid');
+  grid.hidden = !settings.grid || !engine.stream || !['ready', 'recording', 'stopping'].includes(engine.state) || !video.videoWidth || !video.videoHeight;
+  if (grid.hidden) return;
+  // Follow the contained video image, excluding any letterboxing around it.
+  const scale = Math.min(stage.clientWidth / video.videoWidth, stage.clientHeight / video.videoHeight);
+  const width = video.videoWidth * scale, height = video.videoHeight * scale;
+  Object.assign(grid.style, { width: `${width}px`, height: `${height}px`, left: `${(stage.clientWidth - width) / 2}px`, top: `${(stage.clientHeight - height) / 2}px` });
+}
 function renderSettings() {
   settings = normalizeSettings(settings);
   const box = $('prompt-box');
@@ -62,6 +71,8 @@ function renderSettings() {
   ]) { $(id).value = settings[key]; $(label).value = `${settings[key]}${suffix}`; }
   $('countdown-select').value = settings.countdown;
   $('mirror-input').checked = settings.mirror;
+  $('grid-button').setAttribute('aria-pressed', String(settings.grid));
+  updateGrid();
   updateProgress();
 }
 for (const [id, key] of [['font-size','fontSize'],['scroll-speed','speed'],['prompt-width','width'],['prompt-opacity','opacity']]) {
@@ -69,6 +80,7 @@ for (const [id, key] of [['font-size','fontSize'],['scroll-speed','speed'],['pro
 }
 $('countdown-select').addEventListener('change', e => { settings.countdown = Number(e.target.value); scheduleSave(); });
 $('mirror-input').addEventListener('change', e => { settings.mirror = e.target.checked; renderSettings(); scheduleSave(); });
+$('grid-button').addEventListener('click', () => { settings.grid = !settings.grid; renderSettings(); scheduleSave(); });
 for (const [id, y] of [['position-top', 10], ['position-middle', 35]]) $(id).addEventListener('click', () => {
   settings.x = 50; settings.y = y; renderSettings(); scheduleSave();
 });
@@ -354,6 +366,9 @@ window.addEventListener('beforeunload', e => {
   if (engine.state === 'recording' || engine.state === 'stopping' || volatileTakes.size) { e.preventDefault(); e.returnValue = ''; }
 });
 window.addEventListener('resize', () => { renderSettings(); updateProgress(); });
+$('camera-preview').addEventListener('loadedmetadata', updateGrid);
+$('camera-preview').addEventListener('resize', updateGrid);
+new ResizeObserver(updateGrid).observe($('camera-stage'));
 
 function announceUpdate(registration) {
   if (!registration.waiting) return;
