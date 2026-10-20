@@ -22,12 +22,51 @@ async function checkPromptPlacement(page, edge) {
   assert.ok(box.x + box.width <= stage.x + stage.width + 1);
   assert.ok(box.y + box.height <= stage.y + stage.height + 1);
   assert.equal(await page.locator('#prompt-box').getAttribute('data-lens-edge'), edge);
-  if (edge === 'top') assert.ok(box.y + box.height <= stage.y + stage.height * .4 + 1);
-  else {
-    assert.ok(box.width <= stage.width * .35 + 1);
-    const gap = edge === 'left' ? box.x - stage.x : stage.x + stage.width - box.x - box.width;
-    assert.ok(gap <= stage.width * .08 + 1, JSON.stringify({ edge, stage, box }));
+  if (edge === 'top') {
+    assert.ok(box.width >= stage.width * .9);
+    assert.ok(box.y + box.height <= stage.y + stage.height * .5 + 1);
   }
+  else {
+    assert.ok(box.width >= stage.width * .55 && box.width <= stage.width * .61);
+    const gap = edge === 'left' ? box.x - stage.x : stage.x + stage.width - box.x - box.width;
+    assert.ok(gap >= stage.width * .1 && gap <= stage.width * .17, JSON.stringify({ edge, stage, box }));
+  }
+}
+async function setRange(page, id, value) {
+  await page.locator(`#${id}`).evaluate((input, value) => {
+    input.value = String(value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }, value);
+}
+async function checkIndependentPromptSizing(page) {
+  const box = page.locator('#prompt-box');
+  const before = await box.boundingBox();
+  await page.locator('#settings-button').click();
+  const oldFont = await page.locator('#font-size').inputValue(), oldTextWidth = await page.locator('#prompt-width').inputValue();
+  const oldFrameWidth = await page.locator('#frame-width').inputValue(), oldFrameHeight = await page.locator('#frame-height').inputValue();
+  let narrowTextWidth;
+  for (const [font, textWidth] of [[64, 45], [22, 100]]) {
+    await setRange(page, 'font-size', font);
+    await setRange(page, 'prompt-width', textWidth);
+    const after = await box.boundingBox();
+    for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(after[key] - before[key]) < 1, JSON.stringify({ key, before, after }));
+    const text = await page.locator('#prompt-text').boundingBox();
+    if (textWidth === 45) narrowTextWidth = text.width;
+    else assert.ok(text.width > narrowTextWidth * 1.8);
+  }
+  await setRange(page, 'font-size', oldFont);
+  await setRange(page, 'prompt-width', oldTextWidth);
+  await setRange(page, 'frame-width', 45);
+  const resizedWidth = await box.boundingBox();
+  assert.ok(resizedWidth.width < before.width - 10);
+  assert.ok(Math.abs(resizedWidth.height - before.height) < 1);
+  await setRange(page, 'frame-height', 25);
+  const resizedHeight = await box.boundingBox();
+  assert.ok(resizedHeight.height < before.height - 10);
+  assert.ok(Math.abs(resizedHeight.width - resizedWidth.width) < 1);
+  await setRange(page, 'frame-width', oldFrameWidth);
+  await setRange(page, 'frame-height', oldFrameHeight);
+  await page.locator('#settings-dialog [data-close]').click();
 }
 await mkdir('.artifacts', { recursive: true });
 try {
@@ -124,6 +163,7 @@ try {
   await page.waitForFunction(() => document.querySelector('#camera-status').textContent === '카메라 준비 완료');
   assert.equal(await page.locator('body').evaluate(body => body.classList.contains('focus-mode')), true);
   await checkPromptPlacement(page, 'top');
+  await checkIndependentPromptSizing(page);
   await page.screenshot({ path: '.artifacts/iphone-camera.png', fullPage: true });
   await page.locator('#focus-button').click();
   assert.equal(await page.locator('body').evaluate(body => body.classList.contains('focus-mode')), false);
@@ -139,6 +179,7 @@ try {
   await page.locator('#lens-side-select').selectOption('left');
   await page.locator('#settings-dialog [data-close]').click();
   await checkPromptPlacement(page, 'left');
+  await checkIndependentPromptSizing(page);
   await page.screenshot({ path: '.artifacts/landscape.png' });
   await page.locator('#settings-button').click();
   await page.locator('#lens-side-select').selectOption('right');

@@ -527,9 +527,9 @@ textarea::placeholder {
 .prompt-box {
   position:absolute;
   top:4%;
-  left:50%;
-  width:82%;
-  height:180px;
+  left:3%;
+  width:94%;
+  height:40%;
   max-height:100%;
   display:flex;
   flex-direction:column;
@@ -540,6 +540,7 @@ textarea::placeholder {
   overflow:hidden
 }
 .drag-handle {
+  flex-shrink:0;
   display:flex;
   gap:6px;
   align-items:center;
@@ -574,6 +575,10 @@ textarea::placeholder {
   display:none
 }
 .prompt-text {
+  width:82%;
+  min-width:min(100%,2em);
+  max-width:100%;
+  margin:0 auto;
   font-size:34px;
   font-weight:600;
   line-height:1.65;

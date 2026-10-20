@@ -1,47 +1,61 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeSettings, promptLayout, landscapeLensSide, formatTime, nextScroll, recordingName } from '../dist/core.js';
+import { DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, formatTime, nextScroll, recordingName } from '../dist/core.js';
 
 test('corrupt saved preferences cannot put the script outside the screen', () => {
   const s = normalizeSettings({ width: 95, x: -100, y: 90, speed: 'bad', fontSize: 1000, mirror: 'false' });
-  assert.equal(s.x, 47.5); assert.equal(s.y, 4); assert.equal(s.speed, 32); assert.equal(s.fontSize, 64); assert.equal(s.mirror, true);
+  assert.deepEqual(s.promptFrames, DEFAULT_PROMPT_FRAMES); assert.equal(s.speed, 32); assert.equal(s.fontSize, 64); assert.equal(s.mirror, true);
 });
-test('old central positions migrate to the lens while preserving script preferences', () => {
-  const settings = normalizeSettings({ x: 50, y: 35, fontSize: 40, speed: 18, width: 90, opacity: 50 });
-  assert.equal(settings.y, 4);
+test('old narrow frames migrate to larger defaults while preserving reading preferences', () => {
+  const settings = normalizeSettings({ promptLayoutVersion: 2, x: 50, y: 4, landscapeX: 100, fontSize: 40, speed: 18, width: 90, opacity: 50, lensSide: 'right' });
+  assert.equal(settings.promptLayoutVersion, 3);
+  assert.deepEqual(settings.promptFrames, DEFAULT_PROMPT_FRAMES);
   assert.equal(settings.fontSize, 40);
   assert.equal(settings.width, 90);
   assert.equal(settings.speed, 18);
-  assert.equal(normalizeSettings({ ...settings, y: 60 }).y, 8);
-  assert.equal(normalizeSettings({ ...settings, y: -10 }).y, 2);
+  assert.equal(settings.opacity, 50);
+  assert.equal(settings.lensSide, 'right');
 });
-test('portrait reading windows stay at the top even after dragging or entering focus mode', () => {
-  for (const viewport of [{ width: 363, height: 487 }, { width: 393, height: 689 }]) {
-    for (const y of [2, 4, 8, 62]) {
-      const layout = promptLayout({ promptLayoutVersion: 2, y, width: 100 }, viewport);
-      assert.equal(layout.edge, 'top');
-      assert.ok(layout.left >= 0);
-      assert.ok(layout.left + layout.width <= viewport.width);
-      assert.ok(layout.top <= viewport.height * .08);
-      assert.ok(layout.top + layout.height < viewport.height * .5);
-      assert.ok(layout.height <= 210);
+test('default frames are large with inset landscape positioning and a mirrored right default', () => {
+  const portrait = promptLayout({}, { width: 393, height: 727 });
+  assert.ok(Math.abs(portrait.width / 393 - .94) < .001);
+  assert.ok(Math.abs(portrait.height / 727 - .4) < .001);
+  const viewport = { width: 852, height: 329, landscape: true, topInset: 34 };
+  const left = promptLayout({}, viewport), right = promptLayout({}, { ...viewport, lensSide: 'right' });
+  assert.ok(Math.abs(left.width / 852 - .58) < .001);
+  assert.ok(Math.abs(left.height / 329 - .76) < .001);
+  assert.ok(Math.abs(left.left / 852 - .13) < .001);
+  assert.ok(Math.abs(right.left - (852 - left.left - left.width)) < .001);
+});
+test('font size and inner text width cannot change the outer frame', () => {
+  for (const landscape of [false, true]) {
+    const viewport = { width: 852, height: 329, landscape, topInset: 34 };
+    const baseline = promptLayout({}, viewport);
+    for (const fontSize of [22, 34, 64]) {
+      for (const width of [45, 82, 100]) assert.deepEqual(promptLayout({ fontSize, width }, viewport), baseline);
     }
   }
 });
-test('landscape windows and every drag extreme remain beside the selected lens', () => {
-  const viewport = { width: 850, height: 328, landscape: true, topInset: 34 };
-  for (const lensSide of ['left', 'right']) {
-    for (const width of [45, 82, 100]) {
-      for (const x of [0, 100]) {
-        for (const y of [0, 100]) {
-          const layout = promptLayout({ width, landscapeX: x, landscapeY: y }, { ...viewport, lensSide });
-          assert.equal(layout.edge, lensSide);
-          assert.ok(layout.width <= viewport.width * .34);
-          assert.ok(layout.top >= 34);
-          assert.ok(layout.top + layout.height <= viewport.height);
-          if (lensSide === 'left') assert.ok(layout.left + layout.width <= viewport.width * .4);
-          else assert.ok(layout.left >= viewport.width * .6);
-        }
+test('portrait and landscape frame dimensions and positions save independently', () => {
+  const settings = normalizeSettings();
+  settings.promptFrames.landscape = { width: 70, height: 65, x: 50, y: 50 };
+  const restored = normalizeSettings(JSON.parse(JSON.stringify(settings)));
+  assert.deepEqual(restored.promptFrames.portrait, DEFAULT_PROMPT_FRAMES.portrait);
+  assert.deepEqual(restored.promptFrames.landscape, { width: 70, height: 65, x: 50, y: 50 });
+  const center = promptLayout(restored, { width: 852, height: 329, landscape: true });
+  assert.ok(Math.abs(center.left + center.width / 2 - 426) < .001, 'window can be moved to the center');
+});
+test('frame dragging and resizing stay inside the screen including a very short stage', () => {
+  for (const viewport of [{ width: 393, height: 727 }, { width: 852, height: 329, landscape: true, topInset: 34 }, { width: 320, height: 25, landscape: true, topInset: 34 }]) {
+    for (const x of [-100, 50, 300]) {
+      for (const y of [-100, 50, 300]) {
+        const settings = normalizeSettings();
+        settings.promptFrames[viewport.landscape ? 'landscape' : 'portrait'] = { width: 100, height: 90, x, y };
+        const layout = promptLayout(settings, viewport);
+        assert.ok(layout.left >= 0);
+        assert.ok(layout.top >= 0);
+        assert.ok(layout.left + layout.width <= viewport.width);
+        assert.ok(layout.top + layout.height <= viewport.height);
       }
     }
   }

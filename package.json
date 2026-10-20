@@ -1,6 +1,6 @@
 {
   "name": "iphone-prompter",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "대본을 읽으며 촬영하는 설치형 프롬프터 웹앱",

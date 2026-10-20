@@ -1,6 +1,6 @@
-import { CameraEngine } from './camera.js?v=5';
+import { CameraEngine } from './camera.js?v=6';
 import { listRecordings, getRecording, deleteRecording } from './recording-store.js';
-import { DEFAULT_SCRIPT, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll } from './core.js?v=5';
+import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll } from './core.js?v=6';
 
 const $ = id => document.getElementById(id);
 const scriptInput = $('script-input'), promptScroll = $('prompt-scroll'), promptText = $('prompt-text');
@@ -71,6 +71,13 @@ function renderPromptLayout() {
   promptGeometry = promptLayout(settings, { width: stage.clientWidth, height: stage.clientHeight, landscape, lensSide, topInset });
   for (const key of ['left', 'top', 'width', 'height']) box.style[key] = `${promptGeometry[key]}px`;
   box.dataset.lensEdge = promptGeometry.edge;
+  box.dataset.orientation = promptGeometry.orientation;
+  const currentFrame = settings.promptFrames[promptGeometry.orientation];
+  for (const key of ['width', 'height']) {
+    $(`frame-${key}`).value = currentFrame[key];
+    $(`frame-${key}-value`).value = `${currentFrame[key]}%`;
+  }
+  $('frame-orientation').textContent = promptGeometry.orientation === 'landscape' ? '가로 창' : '세로 창';
   box.style.setProperty('--prompt-line-height', `${settings.fontSize * 1.65}px`);
   box.style.setProperty('--prompt-reading-height', `${Math.max(0, promptGeometry.height - $('drag-handle').offsetHeight - 2)}px`);
   scrollPosition = promptScroll.scrollTop;
@@ -81,6 +88,7 @@ function renderSettings() {
   const box = $('prompt-box');
   box.style.backgroundColor = `rgb(0 0 0 / ${settings.opacity}%)`;
   promptText.style.fontSize = `${settings.fontSize}px`;
+  promptText.style.width = `${settings.width}%`;
   $('camera-preview').classList.toggle('mirrored', settings.mirror && engine.facing !== 'environment');
   $('frame-hint').textContent = settings.mirror && engine.facing !== 'environment' ? '미리보기 좌우 반전 · 원본으로 녹화' : '대본 없이 원본으로 녹화';
   for (const [id, key, label, suffix] of [
@@ -97,12 +105,15 @@ function renderSettings() {
 for (const [id, key] of [['font-size','fontSize'],['scroll-speed','speed'],['prompt-width','width'],['prompt-opacity','opacity']]) {
   $(id).addEventListener('input', e => { settings[key] = Number(e.target.value); renderSettings(); scheduleSave(); });
 }
+for (const key of ['width', 'height']) $(`frame-${key}`).addEventListener('input', e => {
+  settings.promptFrames[promptGeometry.orientation][key] = Number(e.target.value); renderSettings(); scheduleSave();
+});
 $('countdown-select').addEventListener('change', e => { settings.countdown = Number(e.target.value); scheduleSave(); });
 $('mirror-input').addEventListener('change', e => { settings.mirror = e.target.checked; renderSettings(); scheduleSave(); });
 $('grid-button').addEventListener('click', () => { settings.grid = !settings.grid; renderSettings(); scheduleSave(); });
 $('lens-side-select').addEventListener('change', e => { settings.lensSide = e.target.value; renderSettings(); scheduleSave(); });
 $('position-reset').addEventListener('click', () => {
-  settings.x = 50; settings.y = 4; settings.landscapeX = 0; settings.landscapeY = 50; renderSettings(); scheduleSave();
+  settings.promptFrames[promptGeometry.orientation] = { ...DEFAULT_PROMPT_FRAMES[promptGeometry.orientation] }; renderSettings(); scheduleSave();
 });
 scriptInput.addEventListener('input', () => { setPlaying(false); renderScript(); scheduleSave(); });
 $('sample-button').addEventListener('click', () => {
@@ -161,7 +172,7 @@ promptScroll.addEventListener('wheel', () => setPlaying(false), { passive: true 
 let drag;
 $('drag-handle').addEventListener('pointerdown', e => {
   const rect = $('camera-stage').getBoundingClientRect();
-  drag = { x: e.clientX, y: e.clientY, settings: { ...settings }, geometry: { ...promptGeometry }, rect };
+  drag = { x: e.clientX, y: e.clientY, frame: { ...settings.promptFrames[promptGeometry.orientation] }, geometry: { ...promptGeometry }, rect };
   e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault();
 });
 $('drag-handle').addEventListener('pointermove', e => {
@@ -169,14 +180,10 @@ $('drag-handle').addEventListener('pointermove', e => {
   movePrompt(e.clientX - drag.x, e.clientY - drag.y, drag); renderSettings();
 });
 function finishDrag() { if (drag) { drag = null; saveWorkspace(); } }
-function movePrompt(dx, dy, start = { settings: { ...settings }, geometry: promptGeometry, rect: $('camera-stage').getBoundingClientRect() }) {
-  if (start.geometry.edge === 'top') {
-    settings.x = start.settings.x + dx / start.rect.width * 100;
-    settings.y = start.settings.y + dy / start.rect.height * 100;
-  } else {
-    settings.landscapeX = start.settings.landscapeX + dx / Math.max(1, start.geometry.travelX) * 100 * (start.geometry.edge === 'right' ? -1 : 1);
-    settings.landscapeY = start.settings.landscapeY + dy / Math.max(1, start.geometry.travelY) * 100;
-  }
+function movePrompt(dx, dy, start = { frame: { ...settings.promptFrames[promptGeometry.orientation] }, geometry: promptGeometry, rect: $('camera-stage').getBoundingClientRect() }) {
+  settings.promptFrames[start.geometry.orientation] = { ...start.frame,
+    x: start.frame.x + dx / start.rect.width * 100 * (start.geometry.edge === 'right' ? -1 : 1),
+    y: start.frame.y + dy / start.rect.height * 100 };
 }
 $('drag-handle').addEventListener('pointerup', finishDrag);
 $('drag-handle').addEventListener('pointercancel', finishDrag);

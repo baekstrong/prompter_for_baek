@@ -9,46 +9,46 @@ export const DEFAULT_SCRIPT = `카메라를 바라보며,
 글자 크기와 속도를 맞춰 보세요.
 준비가 되면, 녹화 버튼을 눌러 주세요.`;
 
-export const DEFAULT_SETTINGS = Object.freeze({ fontSize: 34, speed: 32, width: 82, opacity: 35, x: 50, y: 4, countdown: 3, mirror: true, grid: true, promptLayoutVersion: 2, lensSide: 'auto', landscapeX: 0, landscapeY: 50 });
+export const DEFAULT_PROMPT_FRAMES = Object.freeze({
+  portrait: Object.freeze({ width: 94, height: 40, x: 50, y: 24 }),
+  landscape: Object.freeze({ width: 58, height: 76, x: 42, y: 50 }),
+});
+export const DEFAULT_SETTINGS = Object.freeze({ fontSize: 34, speed: 32, width: 82, opacity: 35, countdown: 3, mirror: true, grid: true, promptLayoutVersion: 3, lensSide: 'auto' });
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 export function normalizeSettings(input = {}) {
   const number = (key, min, max) => clamp(Number.isFinite(Number(input[key])) ? Number(input[key]) : DEFAULT_SETTINGS[key], min, max);
-  const width = number('width', 45, 100);
-  return { fontSize: number('fontSize', 22, 64), speed: number('speed', 8, 100), width,
-    opacity: number('opacity', 0, 85), x: clamp(number('x', 0, 100), width / 2, 100 - width / 2),
-    // Older workspaces allowed a central reading window. Move them back to
-    // the lens once, then retain adjustments within the new reading area.
-    y: input.promptLayoutVersion === 2 ? number('y', 2, 8) : DEFAULT_SETTINGS.y,
-    promptLayoutVersion: 2,
+  const promptFrames = {};
+  for (const orientation of ['portrait', 'landscape']) {
+    const defaults = DEFAULT_PROMPT_FRAMES[orientation];
+    // Versions 1 and 2 coupled text width/font size to a restricted window.
+    // Replace only the old frame geometry, preserving all reading preferences.
+    const saved = input.promptLayoutVersion === 3 ? input.promptFrames?.[orientation] : null;
+    const value = (key, min, max) => clamp(Number.isFinite(Number(saved?.[key])) ? Number(saved[key]) : defaults[key], min, max);
+    const width = value('width', 35, 100), height = value('height', 20, 90);
+    promptFrames[orientation] = { width, height, x: value('x', width / 2, 100 - width / 2), y: value('y', height / 2, 100 - height / 2) };
+  }
+  return { fontSize: number('fontSize', 22, 64), speed: number('speed', 8, 100), width: number('width', 45, 100),
+    opacity: number('opacity', 0, 85), promptFrames,
+    promptLayoutVersion: 3,
     lensSide: ['auto', 'left', 'right'].includes(input.lensSide) ? input.lensSide : 'auto',
-    landscapeX: number('landscapeX', 0, 100), landscapeY: number('landscapeY', 0, 100),
     countdown: [0, 3, 5].includes(Number(input.countdown)) ? Number(input.countdown) : 3,
     mirror: typeof input.mirror === 'boolean' ? input.mirror : true,
     grid: typeof input.grid === 'boolean' ? input.grid : true };
 }
 
-/** Keep the complete reading window in a small band beside the camera lens. */
+/** Frame geometry is independent of font size and the text's inner width. */
 export function promptLayout(input, { width, height, landscape = false, lensSide = 'left', topInset = 0 }) {
   const settings = normalizeSettings(input);
-  const margin = Math.min(10, width / 20, height / 20);
-  const availableHeight = Math.max(1, height - topInset - margin * 2);
-  if (landscape) {
-    const bandWidth = width * .4;
-    const boxWidth = Math.min(300, width * .34) * settings.width / 100;
-    const boxHeight = Math.min(260, availableHeight);
-    const travelX = Math.max(0, bandWidth - boxWidth - margin * 2);
-    const travelY = Math.max(0, availableHeight - boxHeight);
-    const inset = margin + travelX * settings.landscapeX / 100;
-    return { left: lensSide === 'right' ? width - boxWidth - inset : inset,
-      top: topInset + margin + travelY * settings.landscapeY / 100,
-      width: boxWidth, height: boxHeight, travelX, travelY, edge: lensSide };
-  }
-  const boxWidth = Math.min(width - margin * 2, width * settings.width / 100);
-  const boxHeight = Math.min(210, availableHeight, Math.max(height * .34, settings.fontSize * 1.65 + 49));
-  const minTop = topInset + margin;
-  const maxTop = Math.max(minTop, Math.min(height * .08, height - boxHeight - margin));
-  return { left: clamp(width * settings.x / 100 - boxWidth / 2, margin, width - boxWidth - margin),
-    top: clamp(height * settings.y / 100, minTop, maxTop), width: boxWidth, height: boxHeight, edge: 'top' };
+  width = Math.max(1, width); height = Math.max(1, height);
+  const orientation = landscape ? 'landscape' : 'portrait', frame = settings.promptFrames[orientation];
+  const margin = Math.min(8, width / 30, height / 30);
+  topInset = clamp(topInset, 0, Math.max(0, height - margin * 2 - 1));
+  const boxWidth = Math.min(width - margin * 2, width * frame.width / 100);
+  const boxHeight = Math.min(Math.max(1, height - topInset - margin * 2), height * frame.height / 100);
+  const centerX = landscape && lensSide === 'right' ? 100 - frame.x : frame.x;
+  return { left: clamp(width * centerX / 100 - boxWidth / 2, margin, width - boxWidth - margin),
+    top: clamp(height * frame.y / 100 - boxHeight / 2, topInset + margin, height - boxHeight - margin),
+    width: boxWidth, height: boxHeight, edge: landscape ? lensSide : 'top', orientation };
 }
 
 export function landscapeLensSide({ preference = 'auto', safeLeft = 0, safeRight = 0, angle = 0 } = {}) {
