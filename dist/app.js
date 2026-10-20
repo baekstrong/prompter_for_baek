@@ -1,6 +1,6 @@
-import { CameraEngine } from './camera.js?v=6';
+import { CameraEngine } from './camera.js?v=8';
 import { listRecordings, getRecording, deleteRecording } from './recording-store.js';
-import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll } from './core.js?v=6';
+import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll } from './core.js?v=8';
 
 const $ = id => document.getElementById(id);
 const scriptInput = $('script-input'), promptScroll = $('prompt-scroll'), promptText = $('prompt-text');
@@ -68,7 +68,9 @@ function renderPromptLayout() {
     safeRight: parseFloat(style.getPropertyValue('--camera-safe-right')) || 0,
     angle: screen.orientation?.angle ?? window.orientation ?? 0 });
   const topInset = toolbar.top <= rect.top + 1 && toolbar.bottom > rect.top ? toolbar.bottom - rect.top : 0;
-  promptGeometry = promptLayout(settings, { width: stage.clientWidth, height: stage.clientHeight, landscape, lensSide, topInset });
+  const controls = document.querySelector('.studio-bottom').getBoundingClientRect();
+  const bottomInset = controls.bottom >= rect.bottom - 1 && controls.top < rect.bottom ? rect.bottom - controls.top : 0;
+  promptGeometry = promptLayout(settings, { width: stage.clientWidth, height: stage.clientHeight, landscape, lensSide, topInset, bottomInset });
   for (const key of ['left', 'top', 'width', 'height']) box.style[key] = `${promptGeometry[key]}px`;
   box.dataset.lensEdge = promptGeometry.edge;
   box.dataset.orientation = promptGeometry.orientation;
@@ -227,6 +229,8 @@ function updateCameraUI() {
   $('camera-gate').hidden = ['ready', 'recording', 'stopping'].includes(state) || playing;
   $('flip-button').disabled = state !== 'ready' || starting;
   $('camera-off-button').disabled = state !== 'ready' || starting;
+  // Deleting the take being written would abort it and drop its saved chunks.
+  $('library-button').disabled = recording || state === 'stopping' || starting;
   $('record-button').disabled = state === 'stopping' || cancelling || applyingUpdate;
   $('record-button').classList.toggle('is-recording', recording);
   $('record-label').textContent = cancelling ? '준비 취소 중…' : starting ? '준비 취소' : recording ? '녹화 종료' : state === 'stopping' ? '영상 보관 중' : '녹화 시작';
@@ -325,13 +329,14 @@ $('mobile-editor-button').addEventListener('click', () => {
 $('editor-close').addEventListener('click', closeEditor);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && $('editor-panel').classList.contains('is-open')) closeEditor();
+  else if (e.key === 'Escape' && document.body.classList.contains('camera-full') && !document.querySelector('dialog[open]')) setCameraFull(false);
   if (e.key === 'Tab' && $('editor-panel').classList.contains('is-open')) {
     const nodes = [...$('editor-panel').querySelectorAll('button,input:not([hidden]),textarea,[tabindex="0"]')].filter(el => el.offsetParent !== null);
     const first = nodes[0], last = nodes.at(-1);
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   }
-  if (e.code === 'Space' && !e.repeat && !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(e.target.tagName) && !document.querySelector('dialog[open]')) { e.preventDefault(); setPlaying(!playing); }
+  if (e.code === 'Space' && !e.repeat && !e.defaultPrevented && !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(e.target.tagName) && !document.querySelector('dialog[open]')) { e.preventDefault(); setPlaying(!playing); }
 });
 function setFocusMode(focused) {
   document.body.classList.toggle('focus-mode', focused); $('focus-button').setAttribute('aria-pressed', String(focused));
@@ -342,6 +347,19 @@ function focusMobileCamera() {
   if (matchMedia('(max-width:740px), (max-height:540px) and (orientation:landscape)').matches) setFocusMode(true);
 }
 $('focus-button').addEventListener('click', () => setFocusMode(!document.body.classList.contains('focus-mode')));
+// Full screen camera: the preview fills the screen and the controls float over it.
+// iPhone Safari has no element full screen, so the CSS layout works on its own.
+function setCameraFull(full) {
+  document.body.classList.toggle('camera-full', full);
+  $('fullscreen-button').setAttribute('aria-pressed', String(full));
+  $('fullscreen-button').setAttribute('aria-label', full ? '전체화면 끝내기' : '카메라 전체화면');
+  const root = document.documentElement;
+  if (full && !document.fullscreenElement) root.requestFullscreen?.({ navigationUI: 'hide' })?.catch(() => {});
+  else if (!full && document.fullscreenElement) document.exitFullscreen?.()?.catch(() => {});
+  renderPromptLayout();
+}
+$('fullscreen-button').addEventListener('click', () => setCameraFull(!document.body.classList.contains('camera-full')));
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.body.classList.contains('camera-full')) setCameraFull(false); });
 
 async function refreshLibrary() {
   let stored = [];

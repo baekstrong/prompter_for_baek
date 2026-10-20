@@ -81,3 +81,10 @@ test('recording times handle long takes and file names match the format', () => 
   assert.equal(formatTime(1830000), '30:30'); assert.equal(formatTime(3601000), '01:00:01');
   assert.match(recordingName({ createdAt: '2026-10-18T10:00:00Z', mimeType: 'video/mp4' }), /^prompter-\d{8}-\d{6}\.mp4$/);
 });
+
+test('prompt window stays between overlaid top and bottom controls', () => {
+  const layout = promptLayout({ promptLayoutVersion: 3, promptFrames: { portrait: { width: 90, height: 90, x: 50, y: 90 } } },
+    { width: 400, height: 800, topInset: 60, bottomInset: 100 });
+  assert.ok(layout.top >= 60);
+  assert.ok(layout.top + layout.height <= 700);
+});

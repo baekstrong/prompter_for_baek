@@ -12,8 +12,8 @@
   <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icons/icon-180.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./styles.css?v=6">
-  <script type="module" src="./app.js?v=6"></script>
+  <link rel="stylesheet" href="./styles.css?v=8">
+  <script type="module" src="./app.js?v=8"></script>
 </head>
 <body>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -28,6 +28,7 @@
     <symbol id="i-flip" viewBox="0 0 24 24"><path d="M20 8a8 8 0 0 0-14-2L3 9m0-5v5h5m-4 7a8 8 0 0 0 14 2l3-3m0 5v-5h-5"/></symbol>
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></symbol>
     <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+    <symbol id="i-fullscreen" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9V8h3m4 0h3v1m0 6v1h-3m-4 0H7v-1"/></symbol>
     <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9m-5-7a8 8 0 1 0 10 0"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3m-4 4 4-4 4 4M7 10H4v11h16V10h-3"/></symbol>
@@ -48,7 +49,7 @@
         <div class="editor-tip"><span class="tip-mark">↗</span><p>시선은 렌즈 가까이.<br><span>대본 위 손잡이를 끌어 읽기 편한 곳에 놓으세요.</span></p></div>
       </aside>
       <section class="studio" aria-label="프롬프터 촬영">
-        <div class="studio-top"><div class="studio-state"><span id="state-dot" class="state-dot"></span><span id="camera-status">촬영 준비</span></div><div class="studio-tools"><button id="camera-off-button" class="icon-button" aria-label="카메라 끄기" title="카메라 끄기" disabled><svg><use href="#i-power"/></svg></button><button id="flip-button" class="icon-button" aria-label="전면·후면 카메라 전환" title="카메라 전환" disabled><svg><use href="#i-flip"/></svg></button><button id="grid-button" class="icon-button" aria-label="촬영 격자" title="촬영 격자" aria-pressed="true"><svg><use href="#i-grid"/></svg></button><button id="focus-button" class="icon-button" aria-label="촬영 화면 크게 보기" aria-pressed="false"><svg><use href="#i-expand"/></svg></button></div></div>
+        <div class="studio-top"><div class="studio-state"><span id="state-dot" class="state-dot"></span><span id="camera-status">촬영 준비</span></div><div class="studio-tools"><button id="camera-off-button" class="icon-button" aria-label="카메라 끄기" title="카메라 끄기" disabled><svg><use href="#i-power"/></svg></button><button id="flip-button" class="icon-button" aria-label="전면·후면 카메라 전환" title="카메라 전환" disabled><svg><use href="#i-flip"/></svg></button><button id="grid-button" class="icon-button" aria-label="촬영 격자" title="촬영 격자" aria-pressed="true"><svg><use href="#i-grid"/></svg></button><button id="focus-button" class="icon-button" aria-label="촬영 화면 크게 보기" aria-pressed="false"><svg><use href="#i-expand"/></svg></button><button id="fullscreen-button" class="icon-button" aria-label="카메라 전체화면" title="카메라 전체화면" aria-pressed="false"><svg><use href="#i-fullscreen"/></svg></button></div></div>
         <div id="camera-stage" class="camera-stage">
           <video id="camera-preview" autoplay muted playsinline aria-label="카메라 미리보기"></video>
           <div id="camera-grid" class="camera-grid" aria-hidden="true" hidden><span></span><span></span><span></span><span></span></div>
@@ -83,7 +84,7 @@
   <dialog id="library-dialog" class="sheet library-sheet"><div class="dialog-heading"><div><span class="eyebrow">YOUR TAKES</span><h2>촬영 보관함</h2></div><button class="icon-button" data-close aria-label="보관함 닫기"><svg><use href="#i-close"/></svg></button></div><p class="dialog-description">이 브라우저에 보관된 영상입니다. 필요한 영상은 공유하거나 파일로 저장해 주세요.</p><div id="takes-list" class="takes-list"></div></dialog>
   <dialog id="playback-dialog" class="sheet playback-sheet"><div class="dialog-heading"><h2 id="playback-title">촬영한 영상</h2><button class="icon-button" data-close aria-label="영상 닫기"><svg><use href="#i-close"/></svg></button></div><video id="playback-video" controls playsinline preload="metadata"></video><p id="playback-meta" class="dialog-description"></p><div class="playback-actions"><button id="share-button" class="primary-button" disabled><svg><use href="#i-share"/></svg>공유 / 사진에 저장</button><a id="download-link" class="quiet-button" download><svg><use href="#i-download"/></svg>파일로 저장</a></div><p id="share-hint" class="settings-note">공유 화면에서 ‘비디오 저장’을 선택할 수 있습니다. 메뉴는 기기와 파일 형식에 따라 달라집니다.</p></dialog>
   <dialog id="help-dialog" class="sheet"><div class="dialog-heading"><div><span class="eyebrow">A LITTLE HELP</span><h2>자연스럽게 읽는 방법</h2></div><button class="icon-button" data-close aria-label="안내 닫기"><svg><use href="#i-close"/></svg></button></div><ol class="help-steps"><li><strong>대본을 준비하세요.</strong><p>직접 쓰거나 TXT 파일을 불러오세요. 대본은 이 브라우저에 자동 저장됩니다.</p></li><li><strong>시선과 속도를 맞추세요.</strong><p>읽기 편한 창 크기와 위치를 맞춰 보세요. 창 너비·높이는 설정에서, 위치는 창 위의 손잡이로 조절해요. 글자 크기와 대본 폭은 창 크기와 따로 바뀌어요.</p></li><li><strong>이제 녹화하세요.</strong><p>녹화 중에도 대본만 잠시 멈추거나 처음으로 돌릴 수 있어요. 촬영을 마치면 공유 또는 파일로 저장하세요.</p></li></ol><div class="help-note"><strong>아이폰에서 편하게</strong><p>Safari로 열고 공유 → ‘홈 화면에 추가’를 선택하세요. 홈 화면에서도 바로 실행할 수 있어요.</p><p>촬영 중 다른 앱으로 전환하거나 화면을 잠그면 녹화를 종료합니다. 촬영 방향을 유지하고 긴 촬영 전 저장 공간을 확인해 주세요. 브라우저 데이터 삭제 시 보관함도 삭제됩니다.</p><p id="offline-status">처음 한 번은 인터넷 연결이 필요합니다.</p></div></dialog>
-  <div class="app-version"><span>앱 버전 0.1.5</span><button id="check-update-button">업데이트 확인</button><span id="update-status" role="status"></span></div>
+  <div class="app-version"><span>앱 버전 0.1.7</span><button id="check-update-button">업데이트 확인</button><span id="update-status" role="status"></span></div>
   <div id="toast" class="toast" role="status" hidden></div>
   <noscript>프롬프터를 사용하려면 JavaScript를 켜 주세요.</noscript>
 </body>

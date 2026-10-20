@@ -1,4 +1,4 @@
-import { beginRecordingSession, appendRecordingChunk, finishRecordingSession, getRecording } from './recording-store.js';
+import { beginRecordingSession, appendRecordingChunk, finishRecordingSession, getRecording, deleteRecording } from './recording-store.js';
 
 /**
  * Browser-only camera/recorder, with no runtime dependencies.
@@ -412,8 +412,10 @@ export class CameraEngine extends EventTarget {
     } catch (error) {
       this._error(error, '영상 보관함을 사용할 수 없어 임시 메모리로 녹화합니다. 약 64MB에 도달하면 자동 종료되므로 바로 다운로드해 주세요.');
     }
-    if (generation !== this._generation || this._stream !== stream || this._state !== 'ready') return false;
+    const discard = () => { if (take.storageActive) deleteRecording(id).catch(() => {}); return false; };
+    if (generation !== this._generation || this._stream !== stream || this._state !== 'ready') return discard();
     if (!hasLiveTracks(stream) || stream.getTracks().some(track => track.muted)) {
+      discard();
       this._emit('interrupted', { message: '카메라 또는 마이크 입력이 중단되어 녹화 시작을 취소했습니다.' });
       return false;
     }

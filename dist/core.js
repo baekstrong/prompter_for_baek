@@ -37,17 +37,18 @@ export function normalizeSettings(input = {}) {
 }
 
 /** Frame geometry is independent of font size and the text's inner width. */
-export function promptLayout(input, { width, height, landscape = false, lensSide = 'left', topInset = 0 }) {
+export function promptLayout(input, { width, height, landscape = false, lensSide = 'left', topInset = 0, bottomInset = 0 }) {
   const settings = normalizeSettings(input);
   width = Math.max(1, width); height = Math.max(1, height);
   const orientation = landscape ? 'landscape' : 'portrait', frame = settings.promptFrames[orientation];
   const margin = Math.min(8, width / 30, height / 30);
   topInset = clamp(topInset, 0, Math.max(0, height - margin * 2 - 1));
+  bottomInset = clamp(bottomInset, 0, Math.max(0, height - topInset - margin * 2 - 1));
   const boxWidth = Math.min(width - margin * 2, width * frame.width / 100);
-  const boxHeight = Math.min(Math.max(1, height - topInset - margin * 2), height * frame.height / 100);
+  const boxHeight = Math.min(Math.max(1, height - topInset - bottomInset - margin * 2), height * frame.height / 100);
   const centerX = landscape && lensSide === 'right' ? 100 - frame.x : frame.x;
   return { left: clamp(width * centerX / 100 - boxWidth / 2, margin, width - boxWidth - margin),
-    top: clamp(height * frame.y / 100 - boxHeight / 2, topInset + margin, height - boxHeight - margin),
+    top: clamp(height * frame.y / 100 - boxHeight / 2, topInset + margin, height - bottomInset - boxHeight - margin),
     width: boxWidth, height: boxHeight, edge: landscape ? lensSide : 'top', orientation };
 }
 
