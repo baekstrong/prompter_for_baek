@@ -205,19 +205,23 @@ test('closing a pending permission request stops the eventually granted tracks',
   assert.equal(stream.getTracks().every(track => track.stops === 1), true);
 });
 
-test('a new camera connection survives a stale permission response after cancellation', async () => {
+test('a new camera connection waits for the canceled permission response to release its tracks', async () => {
   const grants = [];
   navigator.mediaDevices.getUserMedia = () => new Promise(resolve => grants.push(resolve));
   const camera = engine();
   const staleOpen = camera.open();
   await camera.close();
   const currentOpen = camera.open('environment');
-  const current = new FakeStream();
-  grants[1](current);
-  await currentOpen;
+  assert.equal(grants.length, 1);
   const stale = new FakeStream();
   grants[0](stale);
   await staleOpen;
+  await tick();
+  assert.equal(grants.length, 2);
+  assert.equal(stale.getTracks().every(track => track.stops === 1), true);
+  const current = new FakeStream();
+  grants[1](current);
+  await currentOpen;
   assert.equal(camera.stream, current);
   assert.equal(camera.state, 'ready');
   assert.equal(camera.facing, 'environment');
@@ -265,7 +269,7 @@ test('a disconnected track stops once, retains data, and releases the other trac
   assert.equal(stream.getAudioTracks()[0].stops, 1);
 });
 
-test('a track muted for two seconds interrupts once, preserves data, and releases hardware', async () => {
+test('a track muted for five seconds interrupts once, preserves data, and releases hardware', async () => {
   const camera = engine();
   await camera.open();
   await camera.start();
@@ -275,7 +279,7 @@ test('a track muted for two seconds interrupts once, preserves data, and release
   FakeRecorder.instances[0].chunk('before-call');
   const recorded = new Promise(resolve => camera.addEventListener('recorded', event => resolve(event.detail), { once: true }));
   const originalSetTimeout = globalThis.setTimeout;
-  globalThis.setTimeout = (callback, delay, ...args) => originalSetTimeout(callback, delay === 2000 ? 1 : delay, ...args);
+  globalThis.setTimeout = (callback, delay, ...args) => originalSetTimeout(callback, delay === 5000 ? 1 : delay, ...args);
   let recording;
   try {
     stream.getVideoTracks()[0].mute();
@@ -301,7 +305,7 @@ test('unmute cancels the interruption deadline and releasing a stream clears a p
   const interruptions = [];
   camera.addEventListener('interrupted', event => interruptions.push(event.detail));
   const originalSetTimeout = globalThis.setTimeout;
-  globalThis.setTimeout = (callback, delay, ...args) => originalSetTimeout(callback, delay === 2000 ? 1 : delay, ...args);
+  globalThis.setTimeout = (callback, delay, ...args) => originalSetTimeout(callback, delay === 5000 ? 1 : delay, ...args);
   try {
     videoTrack.mute();
     videoTrack.unmute();
@@ -450,4 +454,280 @@ test('a slow final encoder chunk is retained after the stop waiting notice', asy
   assert.equal(notices.some(message => message.includes('마무리')), true);
   assert.equal(await take.blob.text(), 'firstlate-tail');
   assert.equal(take.complete, true);
+});
+
+test('an ended ready stream is reopened rather than returned as a working camera', async () => {
+  const camera = engine();
+  await camera.open();
+  const previous = camera.stream;
+  previous.getVideoTracks()[0].readyState = 'ended';
+  await camera.open();
+  assert.notEqual(camera.stream, previous);
+  assert.equal(camera.stream.getTracks().every(track => track.readyState === 'live'), true);
+});
+
+test('camera selection uses the physical standard rear lens, never ultra-wide or virtual lenses', async () => {
+  const requests = [];
+  navigator.mediaDevices.enumerateDevices = async () => [
+    { kind: 'videoinput', deviceId: 'front', label: 'Front Camera' },
+    { kind: 'videoinput', deviceId: 'ultra', label: 'Back Ultra Wide Camera' },
+    { kind: 'videoinput', deviceId: 'triple', label: 'Back Triple Camera' },
+    { kind: 'videoinput', deviceId: 'tele', label: 'Back Telephoto Camera' },
+    { kind: 'videoinput', deviceId: 'main', label: 'Back Wide Angle Camera' },
+  ];
+  navigator.mediaDevices.getUserMedia = async constraints => { requests.push(constraints); return new FakeStream(); };
+  const camera = engine();
+  await camera.open('environment');
+  assert.deepEqual(requests[0].video.deviceId, { exact: 'main' });
+});
+
+test('labels revealed after permission select the Korean standard front camera and stop the provisional stream first', async () => {
+  const requests = [], streams = [];
+  navigator.mediaDevices.enumerateDevices = async () => requests.length ? [
+    { kind: 'videoinput', deviceId: 'ultra', label: '전면 초광각 카메라' },
+    { kind: 'videoinput', deviceId: 'front', label: '전면 카메라' },
+    { kind: 'videoinput', deviceId: 'back', label: '후면 광각 카메라' },
+  ] : [{ kind: 'videoinput', deviceId: '', label: '' }];
+  navigator.mediaDevices.getUserMedia = async constraints => {
+    if (requests.length) assert.equal(streams[0].getTracks().every(track => track.stops === 1), true);
+    requests.push(constraints);
+    const stream = new FakeStream(); streams.push(stream); return stream;
+  };
+  const camera = engine();
+  await camera.open('user');
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[1].video.deviceId, { exact: 'front' });
+  assert.equal(camera.stream, streams[1]);
+});
+
+test('unknown camera labels keep the browser facing selection without guessing by enumeration order', async () => {
+  const requests = [];
+  navigator.mediaDevices.enumerateDevices = async () => [
+    { kind: 'videoinput', deviceId: 'a', label: 'Camera 0' },
+    { kind: 'videoinput', deviceId: 'b', label: 'Camera 1' },
+  ];
+  navigator.mediaDevices.getUserMedia = async constraints => { requests.push(constraints); return new FakeStream(); };
+  await engine().open('environment');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].video.deviceId, undefined);
+});
+
+test('supported source zoom is reset to standard 1x for both preview and recorder input', async () => {
+  const stream = new FakeStream(), applied = [];
+  stream.getVideoTracks()[0].getCapabilities = () => ({ zoom: { min: 1, max: 6, step: 0.1 } });
+  stream.getVideoTracks()[0].applyConstraints = async constraints => { applied.push(constraints); };
+  navigator.mediaDevices.getUserMedia = async () => stream;
+  const camera = engine();
+  await camera.open();
+  await camera.start();
+  assert.deepEqual(applied, [{ advanced: [{ zoom: 1 }] }]);
+  assert.equal(FakeRecorder.instances[0].stream, stream);
+  assert.equal(camera.videoElement.srcObject, stream);
+});
+
+test('a paused preview resumes after foregrounding without replacing a healthy recording stream', async () => {
+  const camera = engine();
+  let plays = 0;
+  camera.videoElement.play = async () => { plays++; };
+  await camera.open();
+  const stream = camera.stream;
+  document.visibilityState = 'visible';
+  document.dispatchEvent(new Event('visibilitychange'));
+  await tick();
+  assert.equal(camera.stream, stream);
+  assert.equal(plays, 2);
+});
+
+test('preview playback failures are actionable rather than silently reporting a working preview', async () => {
+  const camera = engine(), notices = [];
+  camera.videoElement.play = async () => { throw Object.assign(new Error('Gesture required'), { name: 'NotAllowedError' }); };
+  camera.addEventListener('error', event => notices.push(event.detail.message));
+  await camera.open();
+  assert.equal(notices.some(message => message.includes('미리보기')), true);
+});
+
+test('a persistent preview-only mute reports the pause and waits for an explicit reconnect', async () => {
+  const camera = engine();
+  await camera.open();
+  const original = camera.stream, notices = [];
+  camera.addEventListener('warning', event => notices.push(event.detail.message));
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (callback, delay, ...args) => originalSetTimeout(callback, delay === 5000 ? 1 : delay, ...args);
+  try {
+    original.getVideoTracks()[0].mute();
+    await tick();
+  } finally { globalThis.setTimeout = originalSetTimeout; }
+  assert.equal(camera.stream, original);
+  assert.equal(original.getTracks().every(track => track.stops === 0), true);
+  assert.equal(notices.some(message => message.includes('일시정지')), true);
+  await camera.open();
+  assert.notEqual(camera.stream, original);
+  assert.equal(original.getTracks().every(track => track.stops === 1), true);
+  assert.equal(camera.state, 'ready');
+  assert.equal(FakeRecorder.instances.length, 0);
+});
+
+test('preview pause and stalled events resume playback while retaining the recorder source', async () => {
+  const video = new EventTarget();
+  let plays = 0;
+  video.play = async () => { plays++; };
+  const camera = new CameraEngine({ videoElement: video }); engines.push(camera);
+  await camera.open();
+  await camera.start();
+  const stream = camera.stream, recorder = FakeRecorder.instances[0];
+  video.dispatchEvent(new Event('pause')); await tick();
+  video.dispatchEvent(new Event('stalled')); await tick();
+  assert.equal(plays, 3);
+  assert.equal(camera.state, 'recording');
+  assert.equal(camera.stream, stream);
+  assert.equal(recorder.stream, stream);
+  assert.equal(recorder.stops, 0);
+});
+
+test('temporary input mute warns once for both tracks and survives past the former two-second deadline', async () => {
+  const camera = engine(), warnings = [], deadlines = [];
+  await camera.open(); await camera.start();
+  camera.addEventListener('warning', event => warnings.push(event.detail.message));
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    if (delay === 5000) { deadlines.push(delay); return originalSetTimeout(callback, 60_000, ...args); }
+    return originalSetTimeout(callback, delay, ...args);
+  };
+  try {
+    camera.stream.getVideoTracks()[0].mute();
+    camera.stream.getAudioTracks()[0].mute();
+    assert.deepEqual(deadlines, [5000, 5000]);
+    assert.equal(warnings.length, 1);
+    camera.stream.getTracks().forEach(track => track.unmute());
+    assert.equal(camera._trackMuteTimers.size, 0);
+    assert.equal(camera.state, 'recording');
+    assert.equal(FakeRecorder.instances[0].stops, 0);
+  } finally { globalThis.setTimeout = originalSetTimeout; }
+});
+
+test('a preview play failure exposes reconnect state, and retry resumes the same healthy stream', async () => {
+  const camera = engine();
+  camera.videoElement.play = async () => { throw new Error('play refused'); };
+  await camera.open('environment');
+  const stream = camera.stream;
+  assert.equal(camera.state, 'error');
+  camera.videoElement.play = async () => {};
+  await camera.open();
+  assert.equal(camera.state, 'ready');
+  assert.equal(camera.facing, 'environment');
+  assert.equal(camera.stream, stream);
+});
+
+test('preview playback failure during a recording preserves the active take and input tracks', async () => {
+  const video = new EventTarget(); video.play = async () => {};
+  const camera = new CameraEngine({ videoElement: video }); engines.push(camera);
+  await camera.open(); await camera.start();
+  const stream = camera.stream;
+  video.play = async () => { throw new Error('play refused'); };
+  video.dispatchEvent(new Event('pause')); await tick();
+  assert.equal(camera.state, 'recording');
+  assert.equal(camera.stream, stream);
+  assert.equal(stream.getTracks().every(track => track.stops === 0), true);
+  const take = await camera.stop();
+  assert.equal(take.complete, true);
+  assert.equal(camera.state, 'error');
+});
+
+test('a removed labeled camera safely falls back to facing selection without retrying permission denial', async () => {
+  const requests = [];
+  navigator.mediaDevices.enumerateDevices = async () => [{ kind: 'videoinput', deviceId: 'gone', label: 'Back Wide Camera' }];
+  navigator.mediaDevices.getUserMedia = async constraints => {
+    requests.push(constraints);
+    if (constraints.video.deviceId) throw Object.assign(new Error('Gone'), { name: 'NotFoundError' });
+    return new FakeStream();
+  };
+  await engine().open('environment');
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[1], { video: { facingMode: { ideal: 'environment' } }, audio: true });
+});
+
+test('an unsupported source zoom does not prevent camera connection or invent a crop', async () => {
+  const stream = new FakeStream(); let attempts = 0;
+  stream.getVideoTracks()[0].getCapabilities = () => ({ zoom: { min: 2, max: 6 } });
+  stream.getVideoTracks()[0].applyConstraints = async () => { attempts++; };
+  navigator.mediaDevices.getUserMedia = async () => stream;
+  const camera = engine(); await camera.open();
+  assert.equal(attempts, 0);
+  assert.equal(camera.stream, stream);
+  assert.equal(camera.state, 'ready');
+});
+
+test('a preview-only ended input reconnects once and reports a repeated failure without a loop', async () => {
+  const camera = engine(); await camera.open();
+  const first = camera.stream;
+  first.getVideoTracks()[0].end(); await tick();
+  const second = camera.stream;
+  assert.notEqual(second, first);
+  assert.equal(camera.state, 'ready');
+  second.getVideoTracks()[0].end(); await tick();
+  assert.equal(camera.stream, null);
+  assert.equal(camera.state, 'error');
+});
+
+test('pageshow reconnects a camera released by pagehide without restarting the take', async () => {
+  const camera = engine(); await camera.open('environment');
+  const stream = camera.stream;
+  window.dispatchEvent(new Event('pagehide'));
+  assert.equal(camera.stream, null);
+  window.dispatchEvent(new Event('pageshow')); await tick();
+  assert.notEqual(camera.stream, stream);
+  assert.equal(camera.facing, 'environment');
+  assert.equal(camera.state, 'ready');
+  assert.equal(FakeRecorder.instances.length, 0);
+});
+
+for (const stage of ['enumeration', 'zoom']) {
+  test(`canceling provisional ${stage} releases hardware before a replacement permission request`, async () => {
+    const provisional = new FakeStream(), current = new FakeStream();
+    let finishSetup, enteredSetup, requests = 0, enumerations = 0;
+    const entered = new Promise(resolve => { enteredSetup = resolve; });
+    const pending = new Promise(resolve => { finishSetup = resolve; });
+    if (stage === 'enumeration') {
+      navigator.mediaDevices.enumerateDevices = async () => {
+        if (++enumerations === 2) { enteredSetup(); await pending; }
+        return [];
+      };
+    } else {
+      provisional.getVideoTracks()[0].getCapabilities = () => ({ zoom: { min: 1, max: 5 } });
+      provisional.getVideoTracks()[0].applyConstraints = async () => { enteredSetup(); await pending; };
+    }
+    navigator.mediaDevices.getUserMedia = async () => {
+      if (++requests === 1) return provisional;
+      assert.equal(provisional.getTracks().every(track => track.stops === 1), true);
+      return current;
+    };
+    const camera = engine(), firstOpen = camera.open();
+    await entered;
+    await camera.close();
+    assert.equal(provisional.getTracks().every(track => track.stops === 1), true);
+    await camera.open('environment');
+    finishSetup();
+    assert.equal(await firstOpen, null);
+    assert.equal(camera.stream, current);
+    assert.equal(camera.state, 'ready');
+    assert.equal(provisional.getTracks().every(track => track.stops === 1), true);
+  });
+}
+
+test('a prolonged preview mute exposes reconnect and recovers only when all input tracks unmute', async () => {
+  const camera = engine(), warnings = [];
+  await camera.open();
+  camera.addEventListener('warning', event => warnings.push(event.detail.message));
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (callback, delay, ...args) => originalSetTimeout(callback, delay === 5000 ? 1 : delay, ...args);
+  try {
+    camera.stream.getTracks().forEach(track => track.mute());
+    await tick();
+    assert.equal(camera.state, 'error');
+    assert.equal(warnings.length, 2);
+    camera.stream.getVideoTracks()[0].unmute(); await tick();
+    assert.equal(camera.state, 'error');
+    camera.stream.getAudioTracks()[0].unmute(); await tick();
+    assert.equal(camera.state, 'ready');
+  } finally { globalThis.setTimeout = originalSetTimeout; }
 });

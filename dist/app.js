@@ -1,6 +1,6 @@
-import { CameraEngine } from './camera.js';
+import { CameraEngine } from './camera.js?v=5';
 import { listRecordings, getRecording, deleteRecording } from './recording-store.js';
-import { DEFAULT_SCRIPT, normalizeSettings, clamp, formatTime, formatBytes, recordingName, nextScroll } from './core.js?v=4';
+import { DEFAULT_SCRIPT, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll } from './core.js?v=5';
 
 const $ = id => document.getElementById(id);
 const scriptInput = $('script-input'), promptScroll = $('prompt-scroll'), promptText = $('prompt-text');
@@ -12,6 +12,7 @@ let recordStart = 0, recordTimer, recordings = [], playbackURL = null, playbackF
 let editorReturnFocus = null, interruptedMessage = '', lastStorageCheck = 0;
 const volatileTakes = new Map();
 let serviceWorkerRegistration = null, applyingUpdate = false;
+let promptGeometry = null;
 
 function toast(message, duration = 5500) {
   const dialog = [...document.querySelectorAll('dialog[open]')].at(-1);
@@ -57,10 +58,27 @@ function updateGrid() {
   const width = video.videoWidth * scale, height = video.videoHeight * scale;
   Object.assign(grid.style, { width: `${width}px`, height: `${height}px`, left: `${(stage.clientWidth - width) / 2}px`, top: `${(stage.clientHeight - height) / 2}px` });
 }
+function renderPromptLayout() {
+  const stage = $('camera-stage'), box = $('prompt-box');
+  const rect = stage.getBoundingClientRect(), toolbar = document.querySelector('.studio-top').getBoundingClientRect();
+  const landscape = matchMedia('(orientation: landscape)').matches && (matchMedia('(max-height: 540px)').matches || matchMedia('(pointer: coarse)').matches);
+  const style = getComputedStyle(stage);
+  const lensSide = landscapeLensSide({ preference: settings.lensSide,
+    safeLeft: parseFloat(style.getPropertyValue('--camera-safe-left')) || 0,
+    safeRight: parseFloat(style.getPropertyValue('--camera-safe-right')) || 0,
+    angle: screen.orientation?.angle ?? window.orientation ?? 0 });
+  const topInset = toolbar.top <= rect.top + 1 && toolbar.bottom > rect.top ? toolbar.bottom - rect.top : 0;
+  promptGeometry = promptLayout(settings, { width: stage.clientWidth, height: stage.clientHeight, landscape, lensSide, topInset });
+  for (const key of ['left', 'top', 'width', 'height']) box.style[key] = `${promptGeometry[key]}px`;
+  box.dataset.lensEdge = promptGeometry.edge;
+  box.style.setProperty('--prompt-line-height', `${settings.fontSize * 1.65}px`);
+  box.style.setProperty('--prompt-reading-height', `${Math.max(0, promptGeometry.height - $('drag-handle').offsetHeight - 2)}px`);
+  scrollPosition = promptScroll.scrollTop;
+  updateProgress();
+}
 function renderSettings() {
   settings = normalizeSettings(settings);
   const box = $('prompt-box');
-  box.style.width = `${settings.width}%`; box.style.left = `${settings.x}%`; box.style.top = `${settings.y}%`;
   box.style.backgroundColor = `rgb(0 0 0 / ${settings.opacity}%)`;
   promptText.style.fontSize = `${settings.fontSize}px`;
   $('camera-preview').classList.toggle('mirrored', settings.mirror && engine.facing !== 'environment');
@@ -70,9 +88,10 @@ function renderSettings() {
     ['prompt-width', 'width', 'width-value', '%'], ['prompt-opacity', 'opacity', 'opacity-value', '%'],
   ]) { $(id).value = settings[key]; $(label).value = `${settings[key]}${suffix}`; }
   $('countdown-select').value = settings.countdown;
+  $('lens-side-select').value = settings.lensSide;
   $('mirror-input').checked = settings.mirror;
   $('grid-button').setAttribute('aria-pressed', String(settings.grid));
-  updateGrid();
+  renderPromptLayout(); updateGrid();
   updateProgress();
 }
 for (const [id, key] of [['font-size','fontSize'],['scroll-speed','speed'],['prompt-width','width'],['prompt-opacity','opacity']]) {
@@ -81,8 +100,9 @@ for (const [id, key] of [['font-size','fontSize'],['scroll-speed','speed'],['pro
 $('countdown-select').addEventListener('change', e => { settings.countdown = Number(e.target.value); scheduleSave(); });
 $('mirror-input').addEventListener('change', e => { settings.mirror = e.target.checked; renderSettings(); scheduleSave(); });
 $('grid-button').addEventListener('click', () => { settings.grid = !settings.grid; renderSettings(); scheduleSave(); });
-for (const [id, y] of [['position-top', 10], ['position-middle', 35]]) $(id).addEventListener('click', () => {
-  settings.x = 50; settings.y = y; renderSettings(); scheduleSave();
+$('lens-side-select').addEventListener('change', e => { settings.lensSide = e.target.value; renderSettings(); scheduleSave(); });
+$('position-reset').addEventListener('click', () => {
+  settings.x = 50; settings.y = 4; settings.landscapeX = 0; settings.landscapeY = 50; renderSettings(); scheduleSave();
 });
 scriptInput.addEventListener('input', () => { setPlaying(false); renderScript(); scheduleSave(); });
 $('sample-button').addEventListener('click', () => {
@@ -141,20 +161,28 @@ promptScroll.addEventListener('wheel', () => setPlaying(false), { passive: true 
 let drag;
 $('drag-handle').addEventListener('pointerdown', e => {
   const rect = $('camera-stage').getBoundingClientRect();
-  drag = { x: e.clientX, y: e.clientY, startX: settings.x, startY: settings.y, rect };
+  drag = { x: e.clientX, y: e.clientY, settings: { ...settings }, geometry: { ...promptGeometry }, rect };
   e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault();
 });
 $('drag-handle').addEventListener('pointermove', e => {
   if (!drag) return;
-  settings.x = drag.startX + (e.clientX - drag.x) / drag.rect.width * 100;
-  settings.y = drag.startY + (e.clientY - drag.y) / drag.rect.height * 100; renderSettings();
+  movePrompt(e.clientX - drag.x, e.clientY - drag.y, drag); renderSettings();
 });
 function finishDrag() { if (drag) { drag = null; saveWorkspace(); } }
+function movePrompt(dx, dy, start = { settings: { ...settings }, geometry: promptGeometry, rect: $('camera-stage').getBoundingClientRect() }) {
+  if (start.geometry.edge === 'top') {
+    settings.x = start.settings.x + dx / start.rect.width * 100;
+    settings.y = start.settings.y + dy / start.rect.height * 100;
+  } else {
+    settings.landscapeX = start.settings.landscapeX + dx / Math.max(1, start.geometry.travelX) * 100 * (start.geometry.edge === 'right' ? -1 : 1);
+    settings.landscapeY = start.settings.landscapeY + dy / Math.max(1, start.geometry.travelY) * 100;
+  }
+}
 $('drag-handle').addEventListener('pointerup', finishDrag);
 $('drag-handle').addEventListener('pointercancel', finishDrag);
 $('drag-handle').addEventListener('keydown', e => {
   const shift = { ArrowLeft: [-2, 0], ArrowRight: [2, 0], ArrowUp: [0, -2], ArrowDown: [0, 2] }[e.key];
-  if (!shift) return; e.preventDefault(); settings.x += shift[0]; settings.y += shift[1]; renderSettings(); scheduleSave();
+  if (!shift) return; e.preventDefault(); movePrompt(shift[0] * 4, shift[1] * 4); renderSettings(); scheduleSave();
 });
 
 async function syncWakeLock() {
@@ -205,6 +233,7 @@ function updateCameraUI() {
 }
 engine.addEventListener('statechange', updateCameraUI);
 engine.addEventListener('error', e => toast(e.detail.message || '카메라를 다시 확인해 주세요.', 8500));
+engine.addEventListener('warning', e => toast(e.detail.message, 5500));
 engine.addEventListener('interrupted', e => { interruptedMessage = e.detail.message; setPlaying(false); toast(interruptedMessage, 8500); });
 engine.addEventListener('progress', e => {
   $('recording-time').textContent = formatTime(e.detail.durationMs);
@@ -221,7 +250,7 @@ engine.addEventListener('recorded', async e => {
   else toast('촬영이 종료되었어요. 보관함에서 영상을 확인해 주세요.', 9000);
 });
 async function openCamera() {
-  try { await engine.open(); updateCameraUI(); }
+  try { await engine.open(); focusMobileCamera(); updateCameraUI(); }
   catch { /* CameraEngine reports an actionable permission or device error. */ }
 }
 $('open-camera').addEventListener('click', openCamera);
@@ -239,6 +268,7 @@ async function startRecording() {
   try {
     if (engine.state !== 'ready') await engine.open();
     if (token !== countdownToken || document.visibilityState !== 'visible') return;
+    focusMobileCamera();
     const free = await updateStorage();
     if (token !== countdownToken) return;
     if (free !== undefined && free < 64 * 1024 ** 2) { toast('저장 공간이 거의 없어요. 기존 영상을 파일로 옮긴 뒤 보관함을 비워 주세요.', 9000); return; }
@@ -296,10 +326,15 @@ document.addEventListener('keydown', e => {
   }
   if (e.code === 'Space' && !e.repeat && !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(e.target.tagName) && !document.querySelector('dialog[open]')) { e.preventDefault(); setPlaying(!playing); }
 });
-$('focus-button').addEventListener('click', () => {
-  const focused = document.body.classList.toggle('focus-mode'); $('focus-button').setAttribute('aria-pressed', String(focused));
+function setFocusMode(focused) {
+  document.body.classList.toggle('focus-mode', focused); $('focus-button').setAttribute('aria-pressed', String(focused));
   $('focus-button').setAttribute('aria-label', focused ? '기본 화면으로 돌아가기' : '촬영 화면 크게 보기');
-});
+  renderPromptLayout();
+}
+function focusMobileCamera() {
+  if (matchMedia('(max-width:740px), (max-height:540px) and (orientation:landscape)').matches) setFocusMode(true);
+}
+$('focus-button').addEventListener('click', () => setFocusMode(!document.body.classList.contains('focus-mode')));
 
 async function refreshLibrary() {
   let stored = [];
@@ -368,7 +403,7 @@ window.addEventListener('beforeunload', e => {
 window.addEventListener('resize', () => { renderSettings(); updateProgress(); });
 $('camera-preview').addEventListener('loadedmetadata', updateGrid);
 $('camera-preview').addEventListener('resize', updateGrid);
-new ResizeObserver(updateGrid).observe($('camera-stage'));
+new ResizeObserver(() => { renderPromptLayout(); updateGrid(); }).observe($('camera-stage'));
 
 function announceUpdate(registration) {
   if (!registration.waiting) return;

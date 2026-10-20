@@ -385,6 +385,8 @@ textarea::placeholder {
   background:#d2f29812
 }
 .camera-stage {
+  --camera-safe-left:env(safe-area-inset-left,0px);
+  --camera-safe-right:env(safe-area-inset-right,0px);
   flex:1;
   position:relative;
   min-height:0;
@@ -524,11 +526,11 @@ textarea::placeholder {
 }
 .prompt-box {
   position:absolute;
-  top:16%;
+  top:4%;
   left:50%;
   width:82%;
-  transform:translateX(-50%);
-  max-height:55%;
+  height:180px;
+  max-height:100%;
   display:flex;
   flex-direction:column;
   border-radius:12px;
@@ -559,12 +561,13 @@ textarea::placeholder {
   cursor:grabbing
 }
 .prompt-scroll {
+  flex:1;
   overflow:auto;
   overscroll-behavior:contain;
   scrollbar-width:none;
-  padding:7px 22px 22px;
+  padding:7px 16px 8px;
   min-height:0;
-  max-height:calc(40vh - 24px);
+  max-height:none;
   touch-action:pan-y
 }
 .prompt-scroll::-webkit-scrollbar {
@@ -585,7 +588,9 @@ textarea::placeholder {
   font-size:12px;
   letter-spacing:2px;
   color:var(--accent);
-  padding:40px 0 50px
+  height:max(0px,calc(var(--prompt-reading-height,130px) - var(--prompt-line-height,56px) - 22px));
+  padding:0;
+  overflow:hidden
 }
 .frame-hint {
   position:absolute;
@@ -1052,7 +1057,7 @@ input[type=checkbox]:checked:after {
     font-size:9px
   }
   .prompt-scroll {
-    padding:7px 14px 22px
+    padding:7px 14px 8px
   }
 }
 @media(max-width:740px) {
@@ -1176,8 +1181,7 @@ input[type=checkbox]:checked:after {
     border-radius:9px
   }
   .prompt-scroll {
-    max-height:32dvh;
-    padding:4px 14px 18px
+    padding:7px 14px 8px
   }
   .workspace-footer {
     font-size:9px;
@@ -1231,9 +1235,6 @@ input[type=checkbox]:checked:after {
   }
   .focus-mode .studio {
     padding-bottom:env(safe-area-inset-bottom)
-  }
-  .focus-mode .prompt-scroll {
-    max-height:45dvh
   }
   .focus-mode .studio-bottom {
     height:80px
@@ -1291,14 +1292,8 @@ input[type=checkbox]:checked:after {
   .gate-note {
     display:none
   }
-  .prompt-scroll {
-    max-height:45dvh
-  }
   .recording-badge {
     top:40px
-  }
-  .prompt-box {
-    max-height:70%
   }
   .editor-panel.is-open {
     display:flex;

@@ -12,8 +12,8 @@
   <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icons/icon-180.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./styles.css?v=4">
-  <script type="module" src="./app.js?v=4"></script>
+  <link rel="stylesheet" href="./styles.css?v=5">
+  <script type="module" src="./app.js?v=5"></script>
 </head>
 <body>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -54,7 +54,7 @@
           <div id="camera-grid" class="camera-grid" aria-hidden="true" hidden><span></span><span></span><span></span><span></span></div>
           <div id="camera-gate" class="camera-gate"><span class="camera-illustration"><svg><use href="#i-camera"/></svg></span><h2>이제, 당신의 차례.</h2><p>대본을 준비하고 카메라를 켜 주세요.<br>영상에는 대본이 담기지 않아요.</p><button id="open-camera" class="primary-button"><svg><use href="#i-camera"/></svg>카메라 켜기</button><span class="gate-note">카메라와 마이크 접근이 필요해요</span></div>
           <div class="frame-corner tl"></div><div class="frame-corner tr"></div><div class="frame-corner bl"></div><div class="frame-corner br"></div>
-          <div id="prompt-box" class="prompt-box" aria-label="대본 프롬프터"><button id="drag-handle" class="drag-handle" aria-label="대본 위치 이동. 방향키로도 이동할 수 있습니다."><span>⠿</span><span>대본 위치 이동</span></button><div id="prompt-scroll" class="prompt-scroll" tabindex="0" aria-label="읽을 대본"><div id="prompt-text" class="prompt-text"></div><div class="prompt-end" aria-hidden="true">이야기의 끝.</div></div></div>
+          <div id="prompt-box" class="prompt-box" aria-label="렌즈 가까이 읽는 대본 프롬프터"><button id="drag-handle" class="drag-handle" aria-label="렌즈 가까운 영역에서 대본 위치 이동. 방향키로도 이동할 수 있습니다."><span>⠿</span><span>렌즈 가까이 · 위치 이동</span></button><div id="prompt-scroll" class="prompt-scroll" tabindex="0" aria-label="읽을 대본"><div id="prompt-text" class="prompt-text"></div><div class="prompt-end" aria-hidden="true">이야기의 끝.</div></div></div>
           <div id="countdown" class="countdown" hidden aria-live="assertive"></div>
           <div id="recording-badge" class="recording-badge" hidden><span></span>REC <span id="recording-time">00:00</span></div>
           <span id="frame-hint" class="frame-hint">미리보기 좌우 반전 · 원본으로 녹화</span>
@@ -70,15 +70,17 @@
     <label class="slider-label" for="scroll-speed">스크롤 속도 <output id="speed-value"></output></label><input id="scroll-speed" type="range" min="8" max="100" step="1"><div class="range-caption"><span>천천히</span><span>빠르게</span></div>
     <label class="slider-label" for="prompt-width">대본 폭 <output id="width-value"></output></label><input id="prompt-width" type="range" min="45" max="100" step="1">
     <label class="slider-label" for="prompt-opacity">대본 배경 <output id="opacity-value"></output></label><input id="prompt-opacity" type="range" min="0" max="85" step="1">
-    <div class="setting-row"><span>대본 위치</span><div class="segmented"><button id="position-top">위쪽</button><button id="position-middle">가운데</button></div></div>
+    <div class="setting-row"><span>대본 위치</span><button id="position-reset" class="quiet-button">렌즈 옆으로 초기화</button></div>
+    <div class="setting-row"><label for="lens-side-select">가로 촬영 렌즈 위치</label><select id="lens-side-select"><option value="auto">자동</option><option value="left">왼쪽</option><option value="right">오른쪽</option></select></div>
+    <p class="settings-note">세로는 화면 위쪽, 가로는 렌즈가 있는 쪽의 작은 창에서 대본을 읽어요. 손잡이로 렌즈 주변에서 위치를 조절할 수 있어요.</p>
     <div class="setting-row"><label for="countdown-select">시작 카운트다운</label><select id="countdown-select"><option value="0">바로 시작</option><option value="3">3초</option><option value="5">5초</option></select></div>
     <div class="setting-row"><label for="mirror-input">미리보기 좌우 반전</label><input id="mirror-input" type="checkbox" role="switch"></div>
     <p class="settings-note" id="quality-status">카메라를 켜면 실제 촬영 화질이 표시됩니다.</p><p class="settings-note">30분 촬영 시 약 1GB의 여유 공간을 권장합니다. 실제 용량은 기기와 화질에 따라 달라집니다. 긴 촬영 전 짧게 녹화하고 소리와 저장을 확인해 주세요.</p>
   </div></dialog>
   <dialog id="library-dialog" class="sheet library-sheet"><div class="dialog-heading"><div><span class="eyebrow">YOUR TAKES</span><h2>촬영 보관함</h2></div><button class="icon-button" data-close aria-label="보관함 닫기"><svg><use href="#i-close"/></svg></button></div><p class="dialog-description">이 브라우저에 보관된 영상입니다. 필요한 영상은 공유하거나 파일로 저장해 주세요.</p><div id="takes-list" class="takes-list"></div></dialog>
   <dialog id="playback-dialog" class="sheet playback-sheet"><div class="dialog-heading"><h2 id="playback-title">촬영한 영상</h2><button class="icon-button" data-close aria-label="영상 닫기"><svg><use href="#i-close"/></svg></button></div><video id="playback-video" controls playsinline preload="metadata"></video><p id="playback-meta" class="dialog-description"></p><div class="playback-actions"><button id="share-button" class="primary-button" disabled><svg><use href="#i-share"/></svg>공유 / 사진에 저장</button><a id="download-link" class="quiet-button" download><svg><use href="#i-download"/></svg>파일로 저장</a></div><p id="share-hint" class="settings-note">공유 화면에서 ‘비디오 저장’을 선택할 수 있습니다. 메뉴는 기기와 파일 형식에 따라 달라집니다.</p></dialog>
-  <dialog id="help-dialog" class="sheet"><div class="dialog-heading"><div><span class="eyebrow">A LITTLE HELP</span><h2>자연스럽게 읽는 방법</h2></div><button class="icon-button" data-close aria-label="안내 닫기"><svg><use href="#i-close"/></svg></button></div><ol class="help-steps"><li><strong>대본을 준비하세요.</strong><p>직접 쓰거나 TXT 파일을 불러오세요. 대본은 이 브라우저에 자동 저장됩니다.</p></li><li><strong>시선과 속도를 맞추세요.</strong><p>대본 손잡이를 렌즈 가까이 옮기고 읽기 연습을 해 보세요. 설정에서 글자 크기와 속도를 바꿀 수 있어요.</p></li><li><strong>이제 녹화하세요.</strong><p>녹화 중에도 대본만 잠시 멈추거나 처음으로 돌릴 수 있어요. 촬영을 마치면 공유 또는 파일로 저장하세요.</p></li></ol><div class="help-note"><strong>아이폰에서 편하게</strong><p>Safari로 열고 공유 → ‘홈 화면에 추가’를 선택하세요. 홈 화면에서도 바로 실행할 수 있어요.</p><p>촬영 중 다른 앱으로 전환하거나 화면을 잠그면 녹화를 종료합니다. 촬영 방향을 유지하고 긴 촬영 전 저장 공간을 확인해 주세요. 브라우저 데이터 삭제 시 보관함도 삭제됩니다.</p><p id="offline-status">처음 한 번은 인터넷 연결이 필요합니다.</p></div></dialog>
-  <div class="app-version"><span>앱 버전 0.1.3</span><button id="check-update-button">업데이트 확인</button><span id="update-status" role="status"></span></div>
+  <dialog id="help-dialog" class="sheet"><div class="dialog-heading"><div><span class="eyebrow">A LITTLE HELP</span><h2>자연스럽게 읽는 방법</h2></div><button class="icon-button" data-close aria-label="안내 닫기"><svg><use href="#i-close"/></svg></button></div><ol class="help-steps"><li><strong>대본을 준비하세요.</strong><p>직접 쓰거나 TXT 파일을 불러오세요. 대본은 이 브라우저에 자동 저장됩니다.</p></li><li><strong>시선과 속도를 맞추세요.</strong><p>렌즈 가까운 작은 창에서 읽기 연습을 해 보세요. 가로 촬영에서 위치가 맞지 않으면 설정의 렌즈 위치를 바꿔 주세요. 글자 크기와 속도도 조절할 수 있어요.</p></li><li><strong>이제 녹화하세요.</strong><p>녹화 중에도 대본만 잠시 멈추거나 처음으로 돌릴 수 있어요. 촬영을 마치면 공유 또는 파일로 저장하세요.</p></li></ol><div class="help-note"><strong>아이폰에서 편하게</strong><p>Safari로 열고 공유 → ‘홈 화면에 추가’를 선택하세요. 홈 화면에서도 바로 실행할 수 있어요.</p><p>촬영 중 다른 앱으로 전환하거나 화면을 잠그면 녹화를 종료합니다. 촬영 방향을 유지하고 긴 촬영 전 저장 공간을 확인해 주세요. 브라우저 데이터 삭제 시 보관함도 삭제됩니다.</p><p id="offline-status">처음 한 번은 인터넷 연결이 필요합니다.</p></div></dialog>
+  <div class="app-version"><span>앱 버전 0.1.4</span><button id="check-update-button">업데이트 확인</button><span id="update-status" role="status"></span></div>
   <div id="toast" class="toast" role="status" hidden></div>
   <noscript>프롬프터를 사용하려면 JavaScript를 켜 주세요.</noscript>
 </body>

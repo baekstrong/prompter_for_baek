@@ -13,13 +13,29 @@ const failures = [];
 page.on('pageerror', error => failures.push(error.message));
 page.on('console', message => { if (message.type() === 'error') failures.push(message.text()); });
 const url = process.env.PROMPTER_TEST_URL || 'http://127.0.0.1:4173/';
+async function checkPromptPlacement(page, edge) {
+  const stage = await page.locator('#camera-stage').boundingBox();
+  const box = await page.locator('#prompt-box').boundingBox();
+  const scroll = await page.locator('#prompt-scroll').boundingBox();
+  assert.ok(box.width > 0 && scroll.height > 0);
+  assert.ok(box.x >= stage.x - 1 && box.y >= stage.y - 1, JSON.stringify({ stage, box }));
+  assert.ok(box.x + box.width <= stage.x + stage.width + 1);
+  assert.ok(box.y + box.height <= stage.y + stage.height + 1);
+  assert.equal(await page.locator('#prompt-box').getAttribute('data-lens-edge'), edge);
+  if (edge === 'top') assert.ok(box.y + box.height <= stage.y + stage.height * .4 + 1);
+  else {
+    assert.ok(box.width <= stage.width * .35 + 1);
+    const gap = edge === 'left' ? box.x - stage.x : stage.x + stage.width - box.x - box.width;
+    assert.ok(gap <= stage.width * .08 + 1, JSON.stringify({ edge, stage, box }));
+  }
+}
 await mkdir('.artifacts', { recursive: true });
 try {
   // A separate context blocks service-worker caching so the deterministic
   // storage delay actually reaches the camera module under test.
   const cancelContext = await browser.newContext({ serviceWorkers: 'block', permissions: ['camera', 'microphone'] });
   const cancelPage = await cancelContext.newPage();
-  await cancelPage.route('**/camera.js', async route => {
+  await cancelPage.route('**/camera.js*', async route => {
     const response = await route.fetch();
     const body = (await response.text()).replace('await beginRecordingSession(', 'await new Promise(resolve => setTimeout(resolve, 1000)); await beginRecordingSession(');
     await route.fulfill({ response, body });
@@ -57,9 +73,16 @@ try {
   });
   await page.locator('#open-camera').click();
   await page.waitForFunction(() => document.querySelector('#camera-status').textContent === '카메라 준비 완료');
+  assert.equal(await page.locator('body').evaluate(body => body.classList.contains('focus-mode')), false);
   await page.locator('#record-button').click();
   await page.waitForFunction(() => document.querySelector('#record-label').textContent === '녹화 종료');
   assert.equal(await page.locator('#flip-button').isDisabled(), true);
+  // A paused preview must recover without stopping the recording or replacing
+  // the capture stream (a different stream would split the saved take).
+  await page.locator('#camera-preview').evaluate(video => { window.testCaptureStream = video.srcObject; video.pause(); });
+  await page.waitForFunction(() => !document.querySelector('#camera-preview').paused);
+  assert.equal(await page.locator('#camera-preview').evaluate(video => video.srcObject === window.testCaptureStream), true);
+  assert.equal(await page.locator('#record-label').textContent(), '녹화 종료');
   await page.waitForFunction(() => document.querySelector('#recording-time').textContent !== '00:00');
   await page.locator('#play-button').click();
   assert.equal(await page.locator('#record-label').textContent(), '녹화 종료');
@@ -99,15 +122,34 @@ try {
   assert.equal(await page.locator('#prompt-text').textContent(), '모바일에서 수정한 대본\n\n줄바꿈 유지');
   await page.locator('#open-camera').click();
   await page.waitForFunction(() => document.querySelector('#camera-status').textContent === '카메라 준비 완료');
+  assert.equal(await page.locator('body').evaluate(body => body.classList.contains('focus-mode')), true);
+  await checkPromptPlacement(page, 'top');
   await page.screenshot({ path: '.artifacts/iphone-camera.png', fullPage: true });
+  await page.locator('#focus-button').click();
+  assert.equal(await page.locator('body').evaluate(body => body.classList.contains('focus-mode')), false);
+  await checkPromptPlacement(page, 'top');
+  await page.screenshot({ path: '.artifacts/iphone-camera-basic.png', fullPage: true });
+  await page.locator('#focus-button').click();
+  assert.equal(await page.locator('body').evaluate(body => body.classList.contains('focus-mode')), true);
+  await checkPromptPlacement(page, 'top');
+  await page.screenshot({ path: '.artifacts/iphone-focus.png', fullPage: true });
   await page.setViewportSize({ width: 852, height: 393 });
   await page.waitForTimeout(250);
+  await page.locator('#settings-button').click();
+  await page.locator('#lens-side-select').selectOption('left');
+  await page.locator('#settings-dialog [data-close]').click();
+  await checkPromptPlacement(page, 'left');
   await page.screenshot({ path: '.artifacts/landscape.png' });
+  await page.locator('#settings-button').click();
+  await page.locator('#lens-side-select').selectOption('right');
+  await page.locator('#settings-dialog [data-close]').click();
+  await checkPromptPlacement(page, 'right');
+  await page.screenshot({ path: '.artifacts/landscape-right.png' });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   const recordBounds = await page.locator('#record-button').boundingBox();
   assert.ok(recordBounds.y + recordBounds.height <= 393, JSON.stringify(recordBounds));
   await page.locator('#camera-off-button').click();
   assert.equal(await page.locator('#camera-status').textContent(), '촬영 준비');
   assert.deepEqual(failures, []);
-  console.log(JSON.stringify({ passed: ['script persistence', 'line breaks', 'scroll/pause/rewind', 'camera with synthetic video/audio', 'pending start cancellation', 'record/stop', 'playable recording', 'download', 'IndexedDB reload recovery', 'offline reload', 'mobile edit', 'portrait/landscape layouts', 'camera release'], video, consoleErrors: failures }, null, 2));
+  console.log(JSON.stringify({ passed: ['script persistence', 'line breaks', 'scroll/pause/rewind', 'camera with synthetic video/audio', 'pending start cancellation', 'paused preview recovery with same recording stream', 'record/stop', 'playable recording', 'download', 'IndexedDB reload recovery', 'offline reload', 'mobile edit', 'mobile camera auto focus', 'portrait/focus/landscape left and right lens placement', 'camera release'], video, consoleErrors: failures }, null, 2));
 } finally { await browser.close(); }

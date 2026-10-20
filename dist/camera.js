@@ -5,16 +5,18 @@ import { beginRecordingSession, appendRecordingChunk, finishRecordingSession, ge
  * new CameraEngine({videoElement}); await open('user'|'environment');
  * await start(); await stop(reason) -> recording|null; close() releases hardware.
  * States: idle, opening, ready, recording, stopping, error.
- * Events: statechange {state}, recorded recording, error {message,error},
+ * Events: statechange {state}, recorded recording, error {message,error}, warning {message},
  * interrupted {message}, progress {durationMs,size,storageState}.
  * A recording is {id,blob,mimeType,extension,createdAt,durationMs,reason,complete,
  * size,persisted}. A recorded event is emitted at most once per nonempty take.
  * IndexedDB receives one-second chunks; fallback/backlog memory is bounded at
  * 64 MiB plus the recorder's final chunk. Saved takes are never auto-deleted.
- * A track muted for two seconds interrupts recording and releases its stream;
- * unmute before that deadline cancels the interruption.
+ * A track muted for five seconds interrupts recording and releases its stream;
+ * unmute before that deadline cancels the interruption. An ended preview can
+ * reconnect once, and foregrounding resumes paused inline video playback.
  */
 const MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
+const INPUT_MUTE_GRACE_MS = 5000;
 const MIME_TYPES = [
   'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4',
   'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm',
@@ -27,8 +29,24 @@ function eventWithDetail(name, detail) {
   return event;
 }
 function now() { return globalThis.performance?.now() ?? Date.now(); }
-function stopTracks(stream) { stream?.getTracks().forEach(track => track.stop()); }
+function stopTracks(stream) { stream?.getTracks().filter(track => track.readyState !== 'ended').forEach(track => track.stop()); }
 function isConstraintError(error) { return ['OverconstrainedError', 'ConstraintNotSatisfiedError'].includes(error?.name); }
+function hasLiveTracks(stream) {
+  return Boolean(stream?.getVideoTracks().length && stream?.getAudioTracks().length &&
+    stream.getTracks().every(track => track.readyState !== 'ended'));
+}
+function standardCamera(devices, facing) {
+  // Labels are optional and localized. Only act on a recognized direction and
+  // lens; device order and opaque numeric names do not identify an optical lens.
+  const front = /\b(front|user|facetime|true\s?depth|selfie)\b|전면|앞면|前置|フロント/i;
+  const rear = /\b(back|rear|environment)\b|후면|뒷면|背面|後置|后置|リア/i;
+  const otherLens = /\b(ultra|dual|triple|telephoto|tele|macro|virtual|desk\s?view)\b|초광각|망원|듀얼|트리플|울트라|超広角|超广角|望遠/i;
+  const wide = /\b(wide|main|primary|standard)\b|광각|기본|메인|広角|广角/i;
+  return devices.filter(device => device.kind === 'videoinput' && device.deviceId)
+    .map(device => ({ device, label: device.label || '' }))
+    .filter(({ label }) => (facing === 'user' ? front : rear).test(label) && !otherLens.test(label))
+    .sort((a, b) => Number(wide.test(b.label)) - Number(wide.test(a.label)))[0]?.device;
+}
 function readableError(error) {
   if (['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(error?.name)) return '카메라와 마이크 권한을 허용한 뒤 다시 연결해 주세요.';
   if (['NotFoundError', 'DevicesNotFoundError'].includes(error?.name)) return '카메라 또는 마이크를 찾지 못했습니다.';
@@ -45,12 +63,20 @@ export class CameraEngine extends EventTarget {
     this._facing = 'user';
     this._generation = 0;
     this._openPromise = null;
+    this._captureRequest = null;
+    this._provisionalStreams = new Set();
+    this._previewAttempt = null;
+    this._previewErrorStream = null;
+    this._previewRecoveryAttempted = false;
+    this._resumeAfterPageShow = false;
     this._startPromise = null;
     this._take = null;
     this._trackListeners = [];
     this._trackMuteTimers = new Map();
+    this._inputWarningActive = false;
+    this._inputPauseReported = false;
     this._onVisibility = () => {
-      if (globalThis.document?.visibilityState !== 'hidden') return;
+      if (globalThis.document?.visibilityState !== 'hidden') { this._resumeCamera(); return; }
       if (this._startPromise && !this._take) {
         ++this._generation;
         this._emit('interrupted', { message: '화면이 가려져 녹화 시작을 취소했습니다.' });
@@ -58,11 +84,21 @@ export class CameraEngine extends EventTarget {
       this._interrupt('화면이 가려져 녹화를 중지했습니다. 저장된 구간을 확인해 주세요.', 'visibility');
     };
     this._onPageHide = () => {
+      this._resumeAfterPageShow = Boolean(this._stream || this._openPromise);
       this._interrupt('페이지를 떠나 녹화를 중지했습니다. 다음 접속 시 보관함에서 저장된 구간을 확인할 수 있습니다.', 'pagehide');
       this.close('pagehide');
     };
+    this._onPageShow = () => {
+      if (this._resumeAfterPageShow && !this._take && !this._startPromise) {
+        this._resumeAfterPageShow = false;
+        void this.open(this._facing).catch(() => {}); // open reports its error.
+      } else this._resumeCamera();
+    };
+    this._onPreviewPause = () => { void this._playPreview(); };
     globalThis.document?.addEventListener('visibilitychange', this._onVisibility);
     globalThis.window?.addEventListener('pagehide', this._onPageHide);
+    globalThis.window?.addEventListener('pageshow', this._onPageShow);
+    for (const type of ['pause', 'loadedmetadata', 'stalled']) videoElement?.addEventListener?.(type, this._onPreviewPause);
     if (videoElement) { videoElement.muted = true; videoElement.playsInline = true; }
   }
 
@@ -87,7 +123,17 @@ export class CameraEngine extends EventTarget {
     this._trackListeners = [];
     const stream = this._stream;
     this._stream = null;
+    this._previewErrorStream = null;
+    this._inputWarningActive = false;
+    this._inputPauseReported = false;
     if (this.videoElement) this.videoElement.srcObject = null;
+    stopTracks(stream);
+    this._provisionalStreams.forEach(pending => stopTracks(pending));
+    this._provisionalStreams.clear();
+  }
+
+  _discardStream(stream) {
+    this._provisionalStreams.delete(stream);
     stopTracks(stream);
   }
 
@@ -96,11 +142,96 @@ export class CameraEngine extends EventTarget {
     this._trackMuteTimers.clear();
   }
 
-  async open(facing = 'user') {
+  async _playPreview(stream = this._stream) {
+    if (!stream || this._stream !== stream || !this.videoElement || globalThis.document?.visibilityState === 'hidden') return true;
+    if (this._previewAttempt?.stream === stream) return this._previewAttempt.promise;
+    const attempt = { stream };
+    this._previewAttempt = attempt;
+    attempt.promise = (async () => {
+      try {
+        this.videoElement.muted = true;
+        this.videoElement.playsInline = true;
+        await this.videoElement.play?.();
+        if (this._stream === stream) {
+          this._previewErrorStream = null;
+          if (this._state === 'error' && hasLiveTracks(stream) && !stream.getTracks().some(track => track.muted)) this._setState('ready');
+        }
+        return true;
+      } catch (error) {
+        if (this._stream !== stream) return false;
+        if (this._previewErrorStream === stream) {
+          if (!this._take && !this._startPromise) this._setState('error');
+          return false;
+        }
+        this._previewErrorStream = stream;
+        this._error(error, this._take ? '카메라 미리보기를 재생하지 못했습니다. 녹화 입력은 유지되며 화면을 다시 열면 재생을 시도합니다.' :
+          '카메라 미리보기를 재생하지 못했습니다. 카메라 연결 버튼을 다시 눌러 주세요.', !this._take && !this._startPromise);
+        return false;
+      } finally { if (this._previewAttempt === attempt) this._previewAttempt = null; }
+    })();
+    return attempt.promise;
+  }
+
+  _resumeCamera() {
+    const stream = this._stream;
+    if (!stream || globalThis.document?.visibilityState === 'hidden') return;
+    if (!hasLiveTracks(stream) && !this._take && !this._startPromise) {
+      this._recoverPreview(stream);
+      return;
+    }
+    void this._playPreview(stream);
+    stream.getTracks().filter(track => track.muted).forEach(track => this._watchMutedTrack(stream, track));
+  }
+
+  _recoverPreview(stream) {
+    if (this._stream !== stream || this._take || this._startPromise || this._openPromise ||
+        globalThis.document?.visibilityState === 'hidden') return;
+    if (this._previewRecoveryAttempted) {
+      this._releaseStream();
+      this._error(new Error('Media track ended after reconnecting.'), '카메라 연결이 다시 끊겼습니다. 다른 앱의 카메라 사용을 마친 뒤 다시 연결해 주세요.', true);
+      return;
+    }
+    this._previewRecoveryAttempted = true;
+    this._releaseStream();
+    void this.open(this._facing, { recovery: true }).catch(() => {});
+  }
+
+  _watchMutedTrack(stream, track) {
+    const take = this._take;
+    if (this._stream !== stream || take?.reason || this._trackMuteTimers.has(track)) return;
+    if (!this._inputWarningActive) {
+      this._inputWarningActive = true;
+      this._emit('warning', { message: '카메라 또는 마이크 입력이 잠시 멎었습니다. 연결을 확인하고 있습니다.' });
+    }
+    const timeout = setTimeout(() => {
+      this._trackMuteTimers.delete(track);
+      if (this._stream !== stream || !track.muted) return;
+      if (this._take) {
+        if (this._take !== take || take.reason) return;
+        this._interrupt('카메라 또는 마이크 입력이 5초 이상 중단되어 녹화를 중지했습니다. 저장된 구간을 확인해 주세요.', 'track-muted');
+        this._releaseStream();
+      } else {
+        // Safari's own capture pause intentionally mutes tracks. Do not override
+        // that choice with an automatic getUserMedia request.
+        this._setState('error');
+        if (!this._inputPauseReported) {
+          this._inputPauseReported = true;
+          this._emit('warning', { message: '카메라 또는 마이크 입력이 중단된 상태입니다. 일시정지를 해제하거나 카메라 연결 버튼을 다시 눌러 주세요.' });
+        }
+      }
+    }, INPUT_MUTE_GRACE_MS);
+    this._trackMuteTimers.set(track, timeout);
+  }
+
+  async open(facing = this._facing, { recovery = false } = {}) {
     if (this._openPromise) return this._openPromise;
     if (this._take || this._startPromise) throw new Error('녹화 중에는 카메라를 바꿀 수 없습니다.');
     if (!['user', 'environment'].includes(facing)) throw new TypeError('Invalid camera facing.');
-    if (this._stream && this._facing === facing && this._state === 'ready') return this._stream;
+    if (!recovery) this._previewRecoveryAttempted = false;
+    if (hasLiveTracks(this._stream) && !this._stream.getTracks().some(track => track.muted) && this._facing === facing && ['ready', 'error'].includes(this._state)) {
+      await this._playPreview();
+      return this._stream;
+    }
     const generation = ++this._generation;
     this._releaseStream();
     this._setState('opening');
@@ -110,65 +241,121 @@ export class CameraEngine extends EventTarget {
     finally { if (this._openPromise === operation) this._openPromise = null; }
   }
 
+  async _enumerateStandardCamera(mediaDevices, facing) {
+    try { return standardCamera(await mediaDevices.enumerateDevices(), facing); }
+    catch { return null; } // Permission-limited labels must not block capture.
+  }
+
+  async _acquireStream(mediaDevices, constraints, generation) {
+    // In Safari a second capture request can mute the first. Wait for a canceled
+    // permission request to settle and release its result before opening another.
+    const previous = this._captureRequest;
+    let release;
+    const request = new Promise(resolve => { release = resolve; });
+    this._captureRequest = request;
+    try {
+      if (previous) await previous;
+      if (generation !== this._generation) return null;
+      const stream = await mediaDevices.getUserMedia(constraints);
+      if (generation !== this._generation) { stopTracks(stream); return null; }
+      // Enumeration and source zoom can still await after permission resolves.
+      // close() must release this stream during that provisional setup too.
+      this._provisionalStreams.add(stream);
+      return stream;
+    } finally {
+      if (this._captureRequest === request) this._captureRequest = null;
+      release();
+    }
+  }
+
+  async _requestStream(mediaDevices, facing, generation, device) {
+    try {
+      return await this._acquireStream(mediaDevices, { video: {
+        facingMode: { ideal: facing }, ...(device ? { deviceId: { exact: device.deviceId } } : {}),
+        width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 },
+      }, audio: true }, generation);
+    } catch (error) {
+      if ((!isConstraintError(error) && !(device && error?.name === 'NotFoundError')) || generation !== this._generation) throw error;
+      return this._acquireStream(mediaDevices, { video: { facingMode: { ideal: facing } }, audio: true }, generation);
+    }
+  }
+
   async _openCamera(facing, generation) {
     let stream;
     try {
       if (!globalThis.navigator?.mediaDevices?.getUserMedia) throw new Error('카메라는 HTTPS 또는 localhost에서 지원되는 브라우저로 열어 주세요.');
       const mediaDevices = globalThis.navigator.mediaDevices;
-      try {
-        stream = await mediaDevices.getUserMedia({ video: {
-          facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 },
-        }, audio: true });
-      } catch (error) {
-        if (!isConstraintError(error) || generation !== this._generation) throw error;
-        stream = await mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing } }, audio: true });
+      let preferred = mediaDevices.enumerateDevices ? await this._enumerateStandardCamera(mediaDevices, facing) : null;
+      if (generation !== this._generation) return null;
+      stream = await this._requestStream(mediaDevices, facing, generation, preferred);
+      if (!stream) return null;
+      if (!preferred && mediaDevices.enumerateDevices) {
+        preferred = await this._enumerateStandardCamera(mediaDevices, facing);
+        if (generation !== this._generation) { this._discardStream(stream); return null; }
+        if (preferred && preferred.deviceId !== stream.getVideoTracks()[0]?.getSettings?.().deviceId) {
+          this._discardStream(stream);
+          stream = await this._requestStream(mediaDevices, facing, generation, preferred);
+          if (!stream) return null;
+        }
       }
-      if (generation !== this._generation) { stopTracks(stream); return null; }
+      if (generation !== this._generation) { this._discardStream(stream); return null; }
       if (!stream.getVideoTracks().length || !stream.getAudioTracks().length) {
-        stopTracks(stream);
+        this._discardStream(stream);
         throw new Error('영상과 음성 트랙을 모두 연결하지 못했습니다. 카메라·마이크를 확인해 주세요.');
       }
+      const videoTrack = stream.getVideoTracks()[0];
+      const zoom = videoTrack.getCapabilities?.().zoom;
+      if (videoTrack.applyConstraints && zoom && Number.isFinite(zoom.min) && Number.isFinite(zoom.max) && zoom.min <= 1 && zoom.max >= 1) {
+        // Web zoom=1 denotes the browser's standard view, including WebKit's
+        // normalization for virtual cameras. Apply to the source so saved video
+        // and preview share the same framing; a CSS crop cannot do that.
+        try { await videoTrack.applyConstraints({ advanced: [{ zoom: 1 }] }); }
+        catch { /* Some browsers expose zoom but reject this constraint. */ }
+      }
+      if (generation !== this._generation) { this._discardStream(stream); return null; }
       this._stream = stream;
+      this._provisionalStreams.delete(stream);
       this._facing = facing;
       stream.getTracks().forEach(track => {
         const onEnded = () => {
           if (this._stream !== stream) return;
           const activeTake = this._take;
           this._interrupt('카메라 또는 마이크 연결이 끊겨 녹화를 중지했습니다.', 'track-ended');
-          this._releaseStream();
-          if (!activeTake) this._error(new Error('Media track ended.'), '카메라 또는 마이크 연결이 끊겼습니다. 다시 연결해 주세요.', true);
+          if (activeTake || this._startPromise) {
+            this._releaseStream();
+            if (!activeTake) this._error(new Error('Media track ended.'), '카메라 연결이 끊겨 녹화 시작을 취소했습니다. 다시 연결해 주세요.', true);
+          }
+          else this._recoverPreview(stream);
         };
         const onUnmute = () => {
           clearTimeout(this._trackMuteTimers.get(track));
           this._trackMuteTimers.delete(track);
+          if (!stream.getTracks().some(item => item.muted)) {
+            this._inputWarningActive = false;
+            this._inputPauseReported = false;
+          }
+          void this._playPreview(stream);
         };
-        const onMute = () => {
-          const take = this._take;
-          if (this._stream !== stream || !take || take.reason || this._trackMuteTimers.has(track)) return;
-          const timeout = setTimeout(() => {
-            this._trackMuteTimers.delete(track);
-            if (this._stream !== stream || this._take !== take || take.reason || !track.muted) return;
-            this._interrupt('통화 등으로 카메라 또는 마이크 입력이 2초 이상 중단되어 녹화를 중지했습니다. 저장된 구간을 확인해 주세요.', 'track-muted');
-            this._releaseStream();
-          }, 2000);
-          this._trackMuteTimers.set(track, timeout);
-        };
+        const onMute = () => this._watchMutedTrack(stream, track);
         for (const [type, listener] of [['ended', onEnded], ['mute', onMute], ['unmute', onUnmute]]) {
           track.addEventListener(type, listener);
           this._trackListeners.push([track, type, listener]);
         }
       });
+      let previewReady = true;
       if (this.videoElement) {
         this.videoElement.srcObject = stream;
-        this.videoElement.muted = true;
-        this.videoElement.playsInline = true;
-        try { await this.videoElement.play?.(); } catch { /* A visible play control can resume preview. */ }
+        previewReady = await this._playPreview(stream);
       }
       if (generation !== this._generation) return null;
-      this._setState('ready');
+      if (!hasLiveTracks(stream)) throw new Error('카메라를 연결하는 동안 입력이 중단되었습니다. 다시 연결해 주세요.');
+      this._setState(previewReady ? 'ready' : 'error');
+      stream.getTracks().filter(track => track.muted).forEach(track => this._watchMutedTrack(stream, track));
       return stream;
     } catch (error) {
-      if (generation !== this._generation) { stopTracks(stream); return null; }
+      if (generation !== this._generation) { this._discardStream(stream); return null; }
+      if (this._stream === stream) this._releaseStream();
+      else this._discardStream(stream);
       this._error(error, readableError(error), true);
       throw error;
     }
@@ -182,6 +369,7 @@ export class CameraEngine extends EventTarget {
   async start() {
     if (this._startPromise) return this._startPromise;
     if (this._state !== 'ready' || !this._stream || this._take) throw new Error('먼저 카메라를 연결해 주세요.');
+    if (!hasLiveTracks(this._stream)) throw new Error('카메라 연결이 끊겼습니다. 카메라를 다시 연결해 주세요.');
     if (this._stream.getTracks().some(track => track.muted)) {
       const error = new Error('카메라 또는 마이크 입력이 일시 중단되었습니다. 통화를 마친 뒤 다시 녹화를 시작해 주세요.');
       this._error(error);
@@ -225,7 +413,7 @@ export class CameraEngine extends EventTarget {
       this._error(error, '영상 보관함을 사용할 수 없어 임시 메모리로 녹화합니다. 약 64MB에 도달하면 자동 종료되므로 바로 다운로드해 주세요.');
     }
     if (generation !== this._generation || this._stream !== stream || this._state !== 'ready') return false;
-    if (stream.getTracks().some(track => track.muted)) {
+    if (!hasLiveTracks(stream) || stream.getTracks().some(track => track.muted)) {
       this._emit('interrupted', { message: '카메라 또는 마이크 입력이 중단되어 녹화 시작을 취소했습니다.' });
       return false;
     }
@@ -361,6 +549,8 @@ export class CameraEngine extends EventTarget {
         this._clearTrackMuteTimers();
         this._take = null;
         this._setState(this._stream ? 'ready' : 'idle');
+        if (this._resumeAfterPageShow && globalThis.document?.visibilityState !== 'hidden') this._onPageShow();
+        else this._resumeCamera();
       }
       if (recording) this._emit('recorded', recording);
       take.resolve(recording);
@@ -378,6 +568,7 @@ export class CameraEngine extends EventTarget {
 
   /** Also cancels an outstanding permission request; its eventual stream closes. */
   close(reason = 'user') {
+    if (reason !== 'pagehide') this._resumeAfterPageShow = false;
     ++this._generation;
     this._openPromise = null;
     this._releaseStream();
@@ -390,6 +581,8 @@ export class CameraEngine extends EventTarget {
   destroy() {
     globalThis.document?.removeEventListener('visibilitychange', this._onVisibility);
     globalThis.window?.removeEventListener('pagehide', this._onPageHide);
+    globalThis.window?.removeEventListener('pageshow', this._onPageShow);
+    for (const type of ['pause', 'loadedmetadata', 'stalled']) this.videoElement?.removeEventListener?.(type, this._onPreviewPause);
     return this.close();
   }
 }
