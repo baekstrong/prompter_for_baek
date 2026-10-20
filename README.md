@@ -4,7 +4,8 @@
 
 ## 실행
 
-- 사용 주소: https://prompter-for-baek.rich-mango-0430.chatgpt.site (소유자 전용 Sites 배포)
+- 사용 주소: https://prompterforbaek-dist.vercel.app (Vercel 무료 플랜, main 푸시 시 자동 배포, 링크를 아는 누구나 접속 가능)
+- 이전 주소: https://prompter-for-baek.rich-mango-0430.chatgpt.site (소유자 전용 Sites 배포, 수동 배포)
 - 아이폰 Chrome 또는 Safari로 열고 카메라·마이크 접근을 허용합니다.
 - 브라우저 공유 메뉴 → **홈 화면에 추가**로 설치할 수 있습니다.
 - 대본을 붙여 넣고 **읽기 연습**으로 속도를 맞춘 뒤 **녹화 시작**을 누릅니다.
@@ -90,7 +91,7 @@ npm run check
 npm test
 ```
 
-HOST·PORT 환경변수로 수신 주소를 바꿀 수 있습니다. 아이폰에서 LAN의 일반 HTTP 주소로 접속하면 카메라를 사용할 수 없으므로 HTTPS 배포 주소를 이용합니다. dist/ 전체를 정적 호스팅에 올리면 됩니다. 프로젝트는 기존 GitHub 저장소 baekstrong/prompterforbaek을 유지하며 Sites 소유자 전용 주소로 배포합니다. 유료 API나 결제를 추가하지 않았으며 서비스의 향후 요금 정책은 별도입니다.
+HOST·PORT 환경변수로 수신 주소를 바꿀 수 있습니다. 아이폰에서 LAN의 일반 HTTP 주소로 접속하면 카메라를 사용할 수 없으므로 HTTPS 배포 주소를 이용합니다. dist/ 전체를 정적 호스팅에 올리면 됩니다. GitHub 저장소 baekstrong/prompter_for_baek를 Vercel 프로젝트 prompter_for_baek-dist(Root Directory: dist, Framework: Other)에 연결해 배포합니다. 유료 API나 결제를 추가하지 않았으며 서비스의 향후 요금 정책은 별도입니다.
 
 ## 검증
 
