@@ -1364,3 +1364,31 @@ input[type=checkbox]:checked:after {
     scroll-behavior:auto!important
   }
 }
+.camera-level {
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:min(46%,240px);
+  transform:translate(-50%,-50%);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  z-index:2;
+  pointer-events:none
+}
+.camera-level span {
+  height:2px;
+  border-radius:1px;
+  background:#fff;
+  box-shadow:0 0 3px #000a
+}
+.camera-level span:nth-child(odd) {
+  width:16%
+}
+.camera-level span:nth-child(2) {
+  width:52%;
+  transform:rotate(var(--tilt,0deg))
+}
+.camera-level.is-level span {
+  background:#ffd60a
+}

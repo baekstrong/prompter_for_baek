@@ -88,3 +88,16 @@ test('prompt window stays between overlaid top and bottom controls', () => {
   assert.ok(layout.top >= 60);
   assert.ok(layout.top + layout.height <= 700);
 });
+
+test('horizon tilt is level when upright in any orientation and ignores gravity sign', async () => {
+  const { horizonTilt } = await import('../dist/core.js');
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  for (const sign of [1, -1]) {
+    assert.ok(near(horizonTilt({ x: 0, y: 9.8 * sign }), 0));
+    assert.ok(near(horizonTilt({ x: 9.8 * sign, y: 0 }, 90), 0));
+    assert.ok(near(horizonTilt({ x: 9.8 * sign, y: 0 }, 270), 0));
+    const t = 5 * Math.PI / 180;
+    assert.ok(near(Math.abs(horizonTilt({ x: 9.8 * sign * Math.sin(t), y: 9.8 * sign * Math.cos(t) })), 5));
+  }
+  assert.equal(horizonTilt({ x: 0.5, y: 0.5 }), null);
+});

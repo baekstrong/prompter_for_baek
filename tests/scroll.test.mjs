@@ -66,6 +66,7 @@ function scrollingApp({ quantize = Math.round, speed = 32, max = 100000 } = {}) 
       promptScroll.scrollTop = position;
       promptScroll.listeners.get('scroll')();
     },
+    release() { promptScroll.listeners.get('pointerup')(); },
     advance(milliseconds, hz = 120) {
       flush();
       const frames = Math.round(milliseconds / 1000 * hz);
@@ -99,17 +100,17 @@ test('rewinding during playback resets the animation position as well as the DOM
   assert.ok(Math.abs(app.position - 32) <= 1, `expected 32px after rewind, got ${app.position}px`);
 });
 
-test('resuming starts from the manually changed position and excludes the paused interval', () => {
+test('a manual move holds the text while pressed, then playback continues from there', () => {
   const app = scrollingApp({ quantize: Math.floor });
   app.pressPlay();
   app.advance(1000);
   app.manuallyScroll(250);
-  assert.equal(app.playing, false);
-  app.advance(60000);
+  app.advance(2000);
+  assert.equal(app.playing, true);
   assert.equal(app.position, 250);
-  app.pressPlay();
+  app.release();
   app.advance(1000);
-  assert.ok(Math.abs(app.position - 282) <= 1, `expected 282px after resume, got ${app.position}px`);
+  assert.ok(Math.abs(app.position - 282) <= 1, `expected 282px after release, got ${app.position}px`);
 });
 
 test('reaching the end pauses and replay starts from the beginning', () => {

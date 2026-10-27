@@ -13,7 +13,7 @@ export const DEFAULT_PROMPT_FRAMES = Object.freeze({
   portrait: Object.freeze({ width: 94, height: 40, x: 50, y: 24 }),
   landscape: Object.freeze({ width: 58, height: 76, x: 42, y: 50 }),
 });
-export const DEFAULT_SETTINGS = Object.freeze({ fontSize: 34, speed: 32, width: 82, opacity: 35, countdown: 3, mirror: true, grid: true, promptLayoutVersion: 3, lensSide: 'auto' });
+export const DEFAULT_SETTINGS = Object.freeze({ fontSize: 34, speed: 32, width: 82, opacity: 35, countdown: 3, mirror: true, grid: true, level: false, promptLayoutVersion: 3, lensSide: 'auto' });
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 export function normalizeSettings(input = {}) {
   const number = (key, min, max) => clamp(Number.isFinite(Number(input[key])) ? Number(input[key]) : DEFAULT_SETTINGS[key], min, max);
@@ -33,7 +33,8 @@ export function normalizeSettings(input = {}) {
     lensSide: ['auto', 'left', 'right'].includes(input.lensSide) ? input.lensSide : 'auto',
     countdown: [0, 3, 5].includes(Number(input.countdown)) ? Number(input.countdown) : 3,
     mirror: typeof input.mirror === 'boolean' ? input.mirror : true,
-    grid: typeof input.grid === 'boolean' ? input.grid : true };
+    grid: typeof input.grid === 'boolean' ? input.grid : true,
+    level: typeof input.level === 'boolean' ? input.level : false };
 }
 
 /** Frame geometry is independent of font size and the text's inner width. */
@@ -76,4 +77,12 @@ export function recordingName(recording) {
 /** A clock independent of frame rate; background gaps never fast-forward a script. */
 export function nextScroll(position, deltaMs, speed, max) {
   return clamp(position + clamp(deltaMs, 0, 100) * speed / 1000, 0, Math.max(0, max));
+}
+
+/** Screen-space tilt of the real horizon in degrees (-90..90), or null when lying flat. */
+export function horizonTilt({ x, y }, screenAngle = 0) {
+  if (Math.hypot(x, y) < 3) return null;
+  // A line has no direction, so browsers' opposite gravity signs give the same angle.
+  const angle = Math.atan2(-y, x) * 180 / Math.PI + 90 + Number(screenAngle);
+  return ((angle % 180) + 270) % 180 - 90;
 }

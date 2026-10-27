@@ -1,6 +1,6 @@
-import { CameraEngine } from './camera.js?v=8';
+import { CameraEngine } from './camera.js?v=9';
 import { listRecordings, getRecording, deleteRecording } from './recording-store.js';
-import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll } from './core.js?v=8';
+import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll, horizonTilt } from './core.js?v=9';
 
 const $ = id => document.getElementById(id);
 const scriptInput = $('script-input'), promptScroll = $('prompt-scroll'), promptText = $('prompt-text');
@@ -101,7 +101,8 @@ function renderSettings() {
   $('lens-side-select').value = settings.lensSide;
   $('mirror-input').checked = settings.mirror;
   $('grid-button').setAttribute('aria-pressed', String(settings.grid));
-  renderPromptLayout(); updateGrid();
+  $('level-button').setAttribute('aria-pressed', String(settings.level));
+  renderPromptLayout(); updateGrid(); updateLevel();
   updateProgress();
 }
 for (const [id, key] of [['font-size','fontSize'],['scroll-speed','speed'],['prompt-width','width'],['prompt-opacity','opacity']]) {
@@ -113,6 +114,36 @@ for (const key of ['width', 'height']) $(`frame-${key}`).addEventListener('input
 $('countdown-select').addEventListener('change', e => { settings.countdown = Number(e.target.value); scheduleSave(); });
 $('mirror-input').addEventListener('change', e => { settings.mirror = e.target.checked; renderSettings(); scheduleSave(); });
 $('grid-button').addEventListener('click', () => { settings.grid = !settings.grid; renderSettings(); scheduleSave(); });
+
+// Level like the iPhone Camera app: the outer marks follow the screen, the middle
+// line follows the real horizon and turns yellow within 1 degree.
+let levelAngle = null, motionAsked = false;
+function updateLevel() {
+  const level = $('camera-level');
+  level.hidden = !settings.level || levelAngle === null || !engine.stream;
+  if (level.hidden) return;
+  level.style.setProperty('--tilt', `${levelAngle.toFixed(1)}deg`);
+  level.classList.toggle('is-level', Math.abs(levelAngle) < 1);
+}
+window.addEventListener('devicemotion', e => {
+  const g = e.accelerationIncludingGravity;
+  if (g?.x == null || g?.y == null) return;
+  levelAngle = horizonTilt(g, screen.orientation?.angle ?? window.orientation ?? 0);
+  updateLevel();
+});
+async function askMotion() {
+  // iOS gives motion only after a tap grants it.
+  if (motionAsked || typeof globalThis.DeviceMotionEvent?.requestPermission !== 'function') return;
+  motionAsked = true;
+  try { if (await DeviceMotionEvent.requestPermission() !== 'granted') toast('수평계를 쓰려면 동작 및 방향 접근을 허용해 주세요.'); }
+  catch { motionAsked = false; }
+}
+$('level-button').addEventListener('click', () => {
+  settings.level = !settings.level; renderSettings(); scheduleSave();
+  if (!settings.level) return;
+  askMotion().then(() => setTimeout(() => { if (settings.level && levelAngle === null) toast('기기를 세워 주세요. 기울기 센서가 없는 기기에서는 수평계가 보이지 않아요.'); }, 1500));
+});
+document.addEventListener('click', () => { if (settings.level) askMotion(); }, { once: true, capture: true });
 $('lens-side-select').addEventListener('change', e => { settings.lensSide = e.target.value; renderSettings(); scheduleSave(); });
 $('position-reset').addEventListener('click', () => {
   settings.promptFrames[promptGeometry.orientation] = { ...DEFAULT_PROMPT_FRAMES[promptGeometry.orientation] }; renderSettings(); scheduleSave();
@@ -143,12 +174,16 @@ function tick(now) {
   if (!playing) return;
   if (!lastFrame) lastFrame = now;
   const max = promptScroll.scrollHeight - promptScroll.clientHeight;
+  // A wheel, drag or resize moved the text: continue from where it now is.
+  if (Math.abs(promptScroll.scrollTop - scrollPosition) > 2) scrollPosition = promptScroll.scrollTop;
   // WebKit exposes integer scrollTop offsets. Keep fractional movement here so
   // a frame smaller than 1px is retained for the next frame (including 120Hz).
-  scrollPosition = nextScroll(scrollPosition, now - lastFrame, settings.speed, max);
-  promptScroll.scrollTop = scrollPosition;
+  if (!holding) {
+    scrollPosition = nextScroll(scrollPosition, now - lastFrame, settings.speed, max);
+    promptScroll.scrollTop = scrollPosition;
+  }
   lastFrame = now; updateProgress();
-  if (scrollPosition >= max) { setPlaying(false); return; }
+  if (!holding && scrollPosition >= max) { setPlaying(false); return; }
   frame = requestAnimationFrame(tick);
 }
 function setPlaying(value) {
@@ -168,8 +203,10 @@ function setPlaying(value) {
 $('play-button').addEventListener('click', () => setPlaying(!playing));
 $('rewind-button').addEventListener('click', () => { scrollPosition = 0; promptScroll.scrollTop = 0; updateProgress(); });
 promptScroll.addEventListener('scroll', updateProgress, { passive: true });
-promptScroll.addEventListener('pointerdown', () => setPlaying(false));
-promptScroll.addEventListener('wheel', () => setPlaying(false), { passive: true });
+// Touching or clicking the text only holds it; playback resumes on release.
+let holding = false;
+promptScroll.addEventListener('pointerdown', () => { holding = true; });
+for (const type of ['pointerup', 'mouseleave', 'touchend', 'touchcancel']) promptScroll.addEventListener(type, () => { holding = false; });
 
 let drag;
 $('drag-handle').addEventListener('pointerdown', e => {

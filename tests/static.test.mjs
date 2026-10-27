@@ -105,7 +105,7 @@ async function createServiceWorkerHarness() {
     ['prompter-shell-v3', new Map()],
     ['prompter-shell-v4', new Map()],
     ['prompter-shell-v5', new Map()],
-    ['prompter-shell-v8', cached],
+    ['prompter-shell-v9', cached],
     ['other-app-shell-v1', new Map()],
     ['recordings', new Map()],
   ]);
@@ -182,10 +182,10 @@ test('service worker installs its complete shell, serves it offline and ignores 
   const { scope, cached, state, dispatch, request } = await createServiceWorkerHarness();
   await dispatch('install');
   assert.ok(cached.has(`${scope}index.html`));
-  assert.ok(cached.has(`${scope}app.js?v=8`));
-  assert.ok(cached.has(`${scope}styles.css?v=8`));
-  assert.ok(cached.has(`${scope}camera.js?v=8`));
-  assert.ok(state.openedCaches.every(name => name === 'prompter-shell-v8'));
+  assert.ok(cached.has(`${scope}app.js?v=9`));
+  assert.ok(cached.has(`${scope}styles.css?v=9`));
+  assert.ok(cached.has(`${scope}camera.js?v=9`));
+  assert.ok(state.openedCaches.every(name => name === 'prompter-shell-v9'));
   assert.equal(state.skipWaitingCalls, 1);
   const installedRequests = state.networkRequests.length;
   state.online = false;
@@ -194,10 +194,10 @@ test('service worker installs its complete shell, serves it offline and ignores 
   assert.equal(navigation.status, 200);
   assert.match(await navigation.text(), /<html/i);
 
-  assert.equal((await request(`${scope}core.js?v=8`)).status, 200);
-  assert.equal((await request(`${scope}app.js?v=8`)).status, 200);
-  assert.equal((await request(`${scope}styles.css?v=8`)).status, 200);
-  assert.equal((await request(`${scope}camera.js?v=8`)).status, 200);
+  assert.equal((await request(`${scope}core.js?v=9`)).status, 200);
+  assert.equal((await request(`${scope}app.js?v=9`)).status, 200);
+  assert.equal((await request(`${scope}styles.css?v=9`)).status, 200);
+  assert.equal((await request(`${scope}camera.js?v=9`)).status, 200);
   for (const url of [`${scope}recording.webm`, `${scope}recording.mp4`, 'https://elsewhere.test/video.mp4', `blob:${scope}recording`]) {
     assert.equal(await request(url), undefined, url);
     assert.equal(cached.has(url), false, url);
@@ -214,9 +214,9 @@ test('service worker refreshes navigation online and retains versioned assets fo
   const appHTML = await readFile(resolve(dist, 'index.html'), 'utf8');
   state.networkHTML = appHTML.replace('</body>', '<p>New network document</p></body>');
   assert.equal(await (await request(scope, 'navigate')).text(), state.networkHTML);
-  assert.match(await (await request(`${scope}core.js?v=8`)).text(), /export /);
-  assert.equal(await (await request(`${scope}app.js?v=8`)).text(), await readFile(resolve(dist, 'app.js'), 'utf8'));
-  assert.equal(await (await request(`${scope}styles.css?v=8`)).text(), await readFile(resolve(dist, 'styles.css'), 'utf8'));
+  assert.match(await (await request(`${scope}core.js?v=9`)).text(), /export /);
+  assert.equal(await (await request(`${scope}app.js?v=9`)).text(), await readFile(resolve(dist, 'app.js'), 'utf8'));
+  assert.equal(await (await request(`${scope}styles.css?v=9`)).text(), await readFile(resolve(dist, 'styles.css'), 'utf8'));
   assert.equal(state.networkRequests.length, installedRequests + 1);
   state.online = false;
   assert.equal(await (await request(scope, 'navigate')).text(), state.networkHTML);
