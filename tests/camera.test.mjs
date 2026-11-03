@@ -171,7 +171,7 @@ test('one recorder starts once; concurrent stop emits one saved take with ordere
   assert.equal(FakeRecorder.instances.length, 1);
   assert.equal(recorder.starts, 1);
   assert.equal(recorder.timeslice, 1000);
-  assert.equal(recorder.options.videoBitsPerSecond, 4_000_000);
+  assert.equal(recorder.options.videoBitsPerSecond, 12_000_000);
   recorder.chunk('first');
   recorder.chunk('second');
   const [first, second] = await Promise.all([camera.stop(), camera.stop()]);

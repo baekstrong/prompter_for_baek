@@ -76,7 +76,7 @@ for (const directory of ['dist', 'scripts', 'tests']) {
   }
 }
 
-for (const path of ['index.html', 'styles.css', 'app.js', 'core.js', 'camera.js', 'recording-store.js', 'manifest.webmanifest', 'sw.js']) {
+for (const path of ['index.html', 'styles.css', 'app.js', 'core.js', 'camera.js', 'mp4-finalize.js', 'recording-store.js', 'manifest.webmanifest', 'sw.js']) {
   try {
     await stat(resolve(dist, path));
   } catch {

@@ -1,6 +1,7 @@
-import { CameraEngine } from './camera.js?v=9';
+import { CameraEngine } from './camera.js?v=10';
 import { listRecordings, getRecording, deleteRecording } from './recording-store.js';
-import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll, horizonTilt } from './core.js?v=9';
+import { finalizeMp4 } from './mp4-finalize.js?v=10';
+import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll, horizonTilt } from './core.js?v=10';
 
 const $ = id => document.getElementById(id);
 const scriptInput = $('script-input'), promptScroll = $('prompt-scroll'), promptText = $('prompt-text');
@@ -436,11 +437,16 @@ async function showTake(metadata) {
     const take = metadata.blob ? metadata : volatileTakes.get(metadata.id) || await getRecording(metadata.id);
     if (token !== playbackToken) return;
     if (!take?.blob?.size) { toast('영상 데이터를 찾지 못했어요. 저장 공간을 확인해 주세요.'); return; }
-    playbackURL = URL.createObjectURL(take.blob);
-    playbackFile = new File([take.blob], recordingName(take), { type: take.mimeType || take.blob.type });
+    // Safari records fragmented MP4: rebuild the index so Photos shows the
+    // real length and can seek. Falls back to the recorded file on failure.
+    let blob = take.blob;
+    if (take.mimeType?.includes('mp4')) blob = await finalizeMp4(take.blob).catch(() => take.blob);
+    if (token !== playbackToken) return;
+    playbackURL = URL.createObjectURL(blob);
+    playbackFile = new File([blob], recordingName(take), { type: take.mimeType || blob.type });
     $('playback-video').src = playbackURL;
     $('download-link').href = playbackURL; $('download-link').download = playbackFile.name;
-    $('playback-meta').textContent = `${formatTime(take.durationMs)} · ${formatBytes(take.size || take.blob.size)} · ${take.mimeType?.includes('mp4') ? 'MP4' : 'WebM'}${take.complete === false ? ' · 촬영 중단 전까지 보관된 영상입니다.' : ''}${!take.persisted && volatileTakes.has(take.id) ? ' · 새로고침 전에 파일로 저장해 주세요.' : ''}`;
+    $('playback-meta').textContent = `${formatTime(take.durationMs)} · ${formatBytes(blob.size)} · ${take.mimeType?.includes('mp4') ? 'MP4' : 'WebM'}${take.complete === false ? ' · 촬영 중단 전까지 보관된 영상입니다.' : ''}${!take.persisted && volatileTakes.has(take.id) ? ' · 새로고침 전에 파일로 저장해 주세요.' : ''}`;
     const canShare = Boolean(navigator.share && navigator.canShare?.({ files: [playbackFile] }));
     $('share-button').disabled = !canShare;
     $('share-hint').textContent = canShare ? '공유 화면에서 ‘비디오 저장’을 선택할 수 있습니다. 메뉴는 기기와 파일 형식에 따라 달라집니다.' : '이 기기에서는 파일로 저장해 주세요. 아이폰에서는 파일 앱의 다운로드 폴더에서 확인할 수 있어요.';

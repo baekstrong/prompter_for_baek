@@ -17,8 +17,10 @@ import { beginRecordingSession, appendRecordingChunk, finishRecordingSession, ge
  */
 const MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 const INPUT_MUTE_GRACE_MS = 5000;
+// High/Main profile first: the Baseline avc1.42E01E pin made Safari encode
+// visibly softer video at the same bitrate.
 const MIME_TYPES = [
-  'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4',
+  'video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1.4d0028,mp4a.40.2', 'video/mp4',
   'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm',
 ];
 
@@ -392,7 +394,7 @@ export class CameraEngine extends EventTarget {
       throw error;
     }
     const mimeType = MIME_TYPES.find(type => globalThis.MediaRecorder.isTypeSupported?.(type));
-    const options = { videoBitsPerSecond: 4_000_000, audioBitsPerSecond: 128_000 };
+    const options = { videoBitsPerSecond: 12_000_000, audioBitsPerSecond: 128_000 };
     if (mimeType) options.mimeType = mimeType;
     let recorder;
     try { recorder = new globalThis.MediaRecorder(stream, options); }
