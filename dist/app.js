@@ -1,7 +1,7 @@
-import { CameraEngine } from './camera.js?v=10';
+import { CameraEngine } from './camera.js?v=11';
 import { listRecordings, getRecording, deleteRecording } from './recording-store.js';
-import { finalizeMp4 } from './mp4-finalize.js?v=10';
-import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll, horizonTilt } from './core.js?v=10';
+import { finalizeMp4 } from './mp4-finalize.js?v=11';
+import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll, horizonTilt } from './core.js?v=11';
 
 const $ = id => document.getElementById(id);
 const scriptInput = $('script-input'), promptScroll = $('prompt-scroll'), promptText = $('prompt-text');
@@ -360,8 +360,12 @@ for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListene
 function closeEditor() {
   $('editor-panel').classList.remove('is-open'); $('editor-panel').removeAttribute('role'); $('editor-panel').removeAttribute('aria-modal'); editorReturnFocus?.focus();
 }
-$('mobile-editor-button').addEventListener('click', () => {
-  setPlaying(false); editorReturnFocus = document.activeElement; $('editor-panel').classList.add('is-open');
+$('edit-script-button').addEventListener('click', () => {
+  setPlaying(false);
+  const panel = $('editor-panel');
+  // Wide layout already shows the editor beside the camera: just jump into it.
+  if (!panel.classList.contains('is-open') && getComputedStyle(panel).display !== 'none') { scriptInput.focus(); return; }
+  editorReturnFocus = document.activeElement; panel.classList.add('is-open');
   $('editor-panel').setAttribute('role', 'dialog'); $('editor-panel').setAttribute('aria-modal', 'true'); scriptInput.focus();
 });
 $('editor-close').addEventListener('click', closeEditor);

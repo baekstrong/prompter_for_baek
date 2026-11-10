@@ -155,7 +155,7 @@ try {
   await page.setViewportSize({ width: 393, height: 852 });
   await page.screenshot({ path: '.artifacts/iphone-layout.png', fullPage: true });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-  await page.locator('#mobile-editor-button').click();
+  await page.locator('#edit-script-button').click();
   await page.locator('#script-input').fill('모바일에서 수정한 대본\n\n줄바꿈 유지');
   await page.locator('#editor-close').click();
   assert.equal(await page.locator('#prompt-text').textContent(), '모바일에서 수정한 대본\n\n줄바꿈 유지');

@@ -686,6 +686,21 @@ textarea::placeholder {
   width:15px;
   height:15px
 }
+.record-group {
+  display:flex;
+  align-items:center;
+  gap:6px
+}
+.record-group>.icon-button {
+  width:44px;
+  height:44px;
+  border:1px solid #3a423d;
+  border-radius:50%
+}
+.record-group svg {
+  width:18px;
+  height:18px
+}
 .timeline {
   height:2px;
   background:#20272b
@@ -1167,6 +1182,13 @@ input[type=checkbox]:checked:after {
   .studio-bottom>.icon-button {
     width:31px
   }
+  .record-group {
+    gap:4px
+  }
+  .record-group>.icon-button {
+    width:40px;
+    height:40px
+  }
   .camera-gate h2 {
     font-size:22px
   }
@@ -1391,4 +1413,36 @@ input[type=checkbox]:checked:after {
 }
 .camera-level.is-level span {
   background:#ffd60a
+}
+/* The edit button opens the script as a floating sheet in every layout. */
+.editor-panel.is-open {
+  display:flex!important;
+  position:fixed;
+  inset:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
+  width:auto;
+  height:auto;
+  max-width:680px;
+  margin:0 auto;
+  z-index:95;
+  border-color:#59615b;
+  box-shadow:0 0 0 100vmax #030609bd;
+  border-radius:17px
+}
+.editor-panel.is-open #editor-close {
+  display:inline-flex!important
+}
+.editor-panel.is-open #save-status {
+  display:none!important
+}
+@media(max-height:540px) and (orientation:landscape) {
+  .editor-panel.is-open {
+    padding:14px 20px 0
+  }
+  .editor-panel.is-open textarea {
+    min-height:0;
+    margin-top:10px
+  }
+  .editor-panel.is-open .editor-tip {
+    display:none
+  }
 }
