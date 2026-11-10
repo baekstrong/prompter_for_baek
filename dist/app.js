@@ -1,7 +1,7 @@
-import { CameraEngine } from './camera.js?v=11';
+import { CameraEngine } from './camera.js?v=12';
 import { listRecordings, getRecording, deleteRecording } from './recording-store.js';
-import { finalizeMp4 } from './mp4-finalize.js?v=11';
-import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll, horizonTilt } from './core.js?v=11';
+import { finalizeMp4 } from './mp4-finalize.js?v=12';
+import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll, horizonTilt } from './core.js?v=12';
 
 const $ = id => document.getElementById(id);
 const scriptInput = $('script-input'), promptScroll = $('prompt-scroll'), promptText = $('prompt-text');
@@ -12,6 +12,10 @@ let saveTimer, toastTimer, wakeLock = null, wakePending = false, countdownToken 
 let recordStart = 0, recordTimer, recordings = [], playbackURL = null, playbackFile = null, playbackToken = 0;
 let editorReturnFocus = null, interruptedMessage = '', lastStorageCheck = 0;
 const volatileTakes = new Map();
+// WebKit reads a shared file fully into memory before the share sheet gets it,
+// so long takes make the sheet close on its own. Those go through Files instead.
+const SHARE_SAFE_BYTES = 150 * 1024 * 1024;
+const LARGE_SHARE_HINT = '영상이 커서 공유 화면이 바로 닫힐 수 있어요. ‘파일로 저장’을 누른 뒤 파일 앱 → 다운로드 폴더에서 영상을 길게 누르고 공유 → ‘비디오 저장’을 선택해 주세요.';
 let serviceWorkerRegistration = null, applyingUpdate = false;
 let promptGeometry = null;
 
@@ -452,8 +456,13 @@ async function showTake(metadata) {
     $('download-link').href = playbackURL; $('download-link').download = playbackFile.name;
     $('playback-meta').textContent = `${formatTime(take.durationMs)} · ${formatBytes(blob.size)} · ${take.mimeType?.includes('mp4') ? 'MP4' : 'WebM'}${take.complete === false ? ' · 촬영 중단 전까지 보관된 영상입니다.' : ''}${!take.persisted && volatileTakes.has(take.id) ? ' · 새로고침 전에 파일로 저장해 주세요.' : ''}`;
     const canShare = Boolean(navigator.share && navigator.canShare?.({ files: [playbackFile] }));
+    const large = blob.size > SHARE_SAFE_BYTES;
     $('share-button').disabled = !canShare;
-    $('share-hint').textContent = canShare ? '공유 화면에서 ‘비디오 저장’을 선택할 수 있습니다. 메뉴는 기기와 파일 형식에 따라 달라집니다.' : '이 기기에서는 파일로 저장해 주세요. 아이폰에서는 파일 앱의 다운로드 폴더에서 확인할 수 있어요.';
+    // Large takes: make "파일로 저장" the main button.
+    $('share-button').className = canShare && !large ? 'primary-button' : 'quiet-button';
+    $('download-link').className = canShare && !large ? 'quiet-button' : 'primary-button';
+    $('share-hint').textContent = !canShare ? '이 기기에서는 파일로 저장해 주세요. 아이폰에서는 파일 앱의 다운로드 폴더에서 확인할 수 있어요.'
+      : large ? LARGE_SHARE_HINT : '공유 화면에서 ‘비디오 저장’을 선택할 수 있습니다. 메뉴는 기기와 파일 형식에 따라 달라집니다.';
     openDialog('playback-dialog');
   } catch { toast('영상을 열지 못했어요. 보관함에서 다시 시도해 주세요.'); }
 }
@@ -461,7 +470,10 @@ $('share-button').addEventListener('click', async () => {
   if (!playbackFile) return;
   // File is prepared before this click so share retains transient user activation.
   try { await navigator.share({ files: [playbackFile], title: '프롬프터 촬영 영상' }); toast('공유 화면으로 영상을 전달했어요.'); }
-  catch (e) { if (e.name !== 'AbortError') toast('공유하지 못했어요. 파일로 저장을 이용해 주세요.'); }
+  catch (e) {
+    if (e.name !== 'AbortError') toast('공유하지 못했어요. 파일로 저장을 이용해 주세요.');
+    else if (playbackFile?.size > SHARE_SAFE_BYTES || /error/i.test(e.message)) toast(LARGE_SHARE_HINT, 9000);
+  }
 });
 $('playback-dialog').addEventListener('close', clearPlayback);
 document.addEventListener('visibilitychange', () => {

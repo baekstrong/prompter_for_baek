@@ -1,13 +1,13 @@
 // Emergency recovery release: old workers may fail before application JS loads.
-const APP_VERSION = '11';
+const APP_VERSION = '12';
 const CACHE_PREFIX = 'prompter-shell-';
 const CACHE_NAME = `${CACHE_PREFIX}v${APP_VERSION}`;
 const SCOPE = new URL(self.registration.scope);
 const INDEX_URL = new URL('./index.html', SCOPE).href;
 const DOCUMENT_MARKER = 'name="application-name" content="Prompter for Baek"';
 const APP_SHELL = [
-  './index.html', './styles.css?v=11', './app.js?v=11', './core.js?v=11',
-  './camera.js?v=11', './mp4-finalize.js?v=11', './recording-store.js', './manifest.webmanifest',
+  './index.html', './styles.css?v=12', './app.js?v=12', './core.js?v=12',
+  './camera.js?v=12', './mp4-finalize.js?v=12', './recording-store.js', './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-180.png', './icons/icon-192.png',
   './icons/icon-512.png', './icons/icon-maskable-512.png',
 ];
