@@ -1,7 +1,7 @@
-import { CameraEngine } from './camera.js?v=12';
+import { CameraEngine } from './camera.js?v=13';
 import { listRecordings, getRecording, deleteRecording } from './recording-store.js';
-import { finalizeMp4 } from './mp4-finalize.js?v=12';
-import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll, horizonTilt } from './core.js?v=12';
+import { finalizeMp4 } from './mp4-finalize.js?v=13';
+import { DEFAULT_SCRIPT, DEFAULT_PROMPT_FRAMES, normalizeSettings, promptLayout, landscapeLensSide, clamp, formatTime, formatBytes, recordingName, nextScroll, horizonTilt } from './core.js?v=13';
 
 const $ = id => document.getElementById(id);
 const scriptInput = $('script-input'), promptScroll = $('prompt-scroll'), promptText = $('prompt-text');
@@ -375,7 +375,6 @@ $('edit-script-button').addEventListener('click', () => {
 $('editor-close').addEventListener('click', closeEditor);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && $('editor-panel').classList.contains('is-open')) closeEditor();
-  else if (e.key === 'Escape' && document.body.classList.contains('camera-full') && !document.querySelector('dialog[open]')) setCameraFull(false);
   if (e.key === 'Tab' && $('editor-panel').classList.contains('is-open')) {
     const nodes = [...$('editor-panel').querySelectorAll('button,input:not([hidden]),textarea,[tabindex="0"]')].filter(el => el.offsetParent !== null);
     const first = nodes[0], last = nodes.at(-1);
@@ -393,19 +392,6 @@ function focusMobileCamera() {
   if (matchMedia('(max-width:740px), (max-height:540px) and (orientation:landscape)').matches) setFocusMode(true);
 }
 $('focus-button').addEventListener('click', () => setFocusMode(!document.body.classList.contains('focus-mode')));
-// Full screen camera: the preview fills the screen and the controls float over it.
-// iPhone Safari has no element full screen, so the CSS layout works on its own.
-function setCameraFull(full) {
-  document.body.classList.toggle('camera-full', full);
-  $('fullscreen-button').setAttribute('aria-pressed', String(full));
-  $('fullscreen-button').setAttribute('aria-label', full ? '전체화면 끝내기' : '카메라 전체화면');
-  const root = document.documentElement;
-  if (full && !document.fullscreenElement) root.requestFullscreen?.({ navigationUI: 'hide' })?.catch(() => {});
-  else if (!full && document.fullscreenElement) document.exitFullscreen?.()?.catch(() => {});
-  renderPromptLayout();
-}
-$('fullscreen-button').addEventListener('click', () => setCameraFull(!document.body.classList.contains('camera-full')));
-document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.body.classList.contains('camera-full')) setCameraFull(false); });
 
 async function refreshLibrary() {
   let stored = [];

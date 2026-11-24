@@ -380,7 +380,7 @@ textarea::placeholder {
   width:17px;
   height:17px
 }
-#grid-button[aria-pressed="true"],#fullscreen-button[aria-pressed="true"] {
+.studio-tools .icon-button[aria-pressed="true"] {
   color:var(--accent);
   background:#d2f29812
 }
@@ -1318,13 +1318,13 @@ input[type=checkbox]:checked:after {
     margin-bottom:12px
   }
   .camera-gate {
-    padding-top:38px
+    padding-top:64px
   }
   .gate-note {
     display:none
   }
   .recording-badge {
-    top:40px
+    top:72px
   }
   .editor-panel.is-open {
     display:flex;
@@ -1336,49 +1336,24 @@ input[type=checkbox]:checked:after {
   .sheet {
     max-height:calc(100dvh - 20px)
   }
-  .studio-tools .icon-button {
-    height:30px
+  /* iOS reserves the top screen edge for its own bars in landscape, so taps
+     there never reach the page. Keep the buttons clear of that strip. */
+  .studio-top {
+    height:auto;
+    padding-top:12px;
+    padding-bottom:6px
   }
-}
-.camera-full .studio {
-  position:fixed;
-  inset:0;
-  z-index:90;
-  height:auto;
-  padding:0;
-  border:0;
-  border-radius:0
-}
-.camera-full .camera-stage {
-  position:absolute;
-  inset:0
-}
-.camera-full .camera-stage>video {
-  object-fit:cover
-}
-.camera-full .studio-top,.camera-full .studio-bottom {
-  position:absolute;
-  left:0;
-  right:0;
-  z-index:6;
-  height:auto;
-  border:0;
-  background:#101318a6;
-  -webkit-backdrop-filter:blur(8px);
-  backdrop-filter:blur(8px)
-}
-.camera-full .studio-top {
-  top:0;
-  min-height:44px;
-  padding:env(safe-area-inset-top) max(14px,env(safe-area-inset-right)) 0 max(14px,env(safe-area-inset-left))
-}
-.camera-full .studio-bottom {
-  bottom:0;
-  min-height:68px;
-  padding:6px max(18px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left))
-}
-.camera-full .timeline,.camera-full .app-version {
-  display:none
+  .studio-tools {
+    gap:6px
+  }
+  .studio-tools .icon-button {
+    width:42px;
+    height:42px
+  }
+  .studio-tools svg {
+    width:20px;
+    height:20px
+  }
 }
 @media(prefers-reduced-motion:reduce) {
   *,*:before,*:after {

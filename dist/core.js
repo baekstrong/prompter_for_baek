@@ -13,7 +13,7 @@ export const DEFAULT_PROMPT_FRAMES = Object.freeze({
   portrait: Object.freeze({ width: 94, height: 40, x: 50, y: 24 }),
   landscape: Object.freeze({ width: 58, height: 76, x: 42, y: 50 }),
 });
-export const DEFAULT_SETTINGS = Object.freeze({ fontSize: 34, speed: 32, width: 82, opacity: 35, countdown: 3, mirror: true, grid: true, level: false, promptLayoutVersion: 3, lensSide: 'auto' });
+export const DEFAULT_SETTINGS = Object.freeze({ fontSize: 34, speed: 32, width: 82, opacity: 35, countdown: 3, mirror: true, grid: true, level: true, promptLayoutVersion: 3, defaultsVersion: 2, lensSide: 'auto' });
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 export function normalizeSettings(input = {}) {
   const number = (key, min, max) => clamp(Number.isFinite(Number(input[key])) ? Number(input[key]) : DEFAULT_SETTINGS[key], min, max);
@@ -30,11 +30,13 @@ export function normalizeSettings(input = {}) {
   return { fontSize: number('fontSize', 22, 64), speed: number('speed', 8, 100), width: number('width', 45, 100),
     opacity: number('opacity', 0, 85), promptFrames,
     promptLayoutVersion: 3,
+    // Version 2 turns the grid and level on once for settings saved before it.
+    defaultsVersion: 2,
     lensSide: ['auto', 'left', 'right'].includes(input.lensSide) ? input.lensSide : 'auto',
     countdown: [0, 3, 5].includes(Number(input.countdown)) ? Number(input.countdown) : 3,
     mirror: typeof input.mirror === 'boolean' ? input.mirror : true,
-    grid: typeof input.grid === 'boolean' ? input.grid : true,
-    level: typeof input.level === 'boolean' ? input.level : false };
+    grid: input.defaultsVersion === 2 && typeof input.grid === 'boolean' ? input.grid : true,
+    level: input.defaultsVersion === 2 && typeof input.level === 'boolean' ? input.level : true };
 }
 
 /** Frame geometry is independent of font size and the text's inner width. */

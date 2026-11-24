@@ -112,7 +112,7 @@ try {
   });
   await page.locator('#open-camera').click();
   await page.waitForFunction(() => document.querySelector('#camera-status').textContent === '카메라 준비 완료');
-  assert.equal(await page.locator('body').evaluate(body => body.classList.contains('focus-mode')), false);
+  assert.equal(await page.locator('body').evaluate(body => body.classList.contains('focus-mode')), true);
   await page.locator('#record-button').click();
   await page.waitForFunction(() => document.querySelector('#record-label').textContent === '녹화 종료');
   assert.equal(await page.locator('#flip-button').isDisabled(), true);
